@@ -164,7 +164,7 @@ export function ProjectManagementScreen() {
       projects: [
         {
           id: 3,
-          title: "Smith Residence",
+          title: "Sample Project 2",
           assignee: "TA",
           assignees: ["Team A", "Emily Davis"],
           date: "Oct 20 - Oct 22",
@@ -189,7 +189,7 @@ export function ProjectManagementScreen() {
       projects: [
         {
           id: 4,
-          title: "Brown Warehouse",
+          title: "Sample Project 3",
           assignee: "TB",
           date: "Oct 23 - Oct 27",
           tags: ["20kW System", "Industrial"],
@@ -2615,8 +2615,8 @@ export function ProjectManagementScreen() {
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-muted-foreground">Current Projects</Label>
                 <div className="space-y-1">
-                  <div className="p-2 bg-muted rounded text-sm">Smith Residence - In Progress</div>
-                  <div className="p-2 bg-muted rounded text-sm">Davis Home - Scheduled</div>
+                  <div className="p-2 bg-muted rounded text-sm">Sample Project - In Progress</div>
+                  <div className="p-2 bg-muted rounded text-sm">Sample Project 2 - Scheduled</div>
                 </div>
               </div>
             </div>

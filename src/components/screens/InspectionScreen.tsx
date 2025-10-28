@@ -43,9 +43,9 @@ export function InspectionScreen() {
       customerName: "[Customer Name]",
       customerPhone: "+61 400 123 456",
       customerEmail: "john.smith@email.com",
-      systemSize: "6.4 kW",
-      installationDate: "Oct 15, 2025",
-      projectId: "#4523",
+      systemSize: "[System Size]",
+      installationDate: "[Installation Date]",
+      projectId: "[Project ID]",
       priority: "Standard"
     },
     { 
@@ -244,15 +244,15 @@ This certificate confirms the electrical installation is safe and compliant.
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-gray-600 mb-1">Project ID</p>
-                  <p>#4523</p>
+                  <p>[Project ID]</p>
                 </div>
                 <div>
                   <p className="text-gray-600 mb-1">Installation Date</p>
-                  <p>Oct 15, 2025</p>
+                  <p>[Installation Date]</p>
                 </div>
                 <div>
                   <p className="text-gray-600 mb-1">System Size</p>
-                  <p>6.4 kW</p>
+                  <p>[System Size]</p>
                 </div>
                 <div>
                   <p className="text-gray-600 mb-1">Customer</p>

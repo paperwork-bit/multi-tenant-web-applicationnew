@@ -244,17 +244,17 @@ export function DashboardScreen({ retailerTeam }: DashboardScreenProps) {
         <div onClick={() => handleKpiClick("Active Leads")} className="cursor-pointer">
         <KPICard
           title="Active Leads"
-          value="24"
-          change="+12% from last month"
+          value="0"
+          change="No data available"
           icon={Users}
-          trend="up"
+          trend="neutral"
         />
         </div>
         <div onClick={() => handleKpiClick("Scheduled Installs")} className="cursor-pointer">
         <KPICard
           title="Scheduled Installs"
-          value="8"
-          change="3 this week"
+          value="0"
+          change="No installs scheduled"
           icon={Wrench}
           trend="neutral"
         />
@@ -265,8 +265,8 @@ export function DashboardScreen({ retailerTeam }: DashboardScreenProps) {
             <div onClick={() => handleKpiClick("Rebates in Progress")} className="cursor-pointer">
             <KPICard
               title="Rebates in Progress"
-              value="15"
-              change="$87,500 total"
+              value="0"
+              change="No rebates in progress"
               icon={FileCheck}
               trend="neutral"
             />
@@ -274,10 +274,10 @@ export function DashboardScreen({ retailerTeam }: DashboardScreenProps) {
             <div onClick={() => handleKpiClick("AR Outstanding")} className="cursor-pointer">
             <KPICard
               title="AR Outstanding"
-              value="$52,340"
-              change="-8% from last month"
+              value="$0"
+              change="No outstanding amounts"
               icon={DollarSign}
-              trend="up"
+              trend="neutral"
             />
             </div>
           </>

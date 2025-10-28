@@ -61,7 +61,7 @@ export function ProjectManagementSiteVisitScreen() {
   const salesSiteVisits = [
     {
       id: "SV-001",
-      customerName: "John Smith",
+      customerName: "[Customer Name]",
       propertyAddress: "123 Solar Street, Brisbane QLD 4000",
       salesPerson: "Sarah Johnson",
       visitDate: "2024-01-15",
@@ -88,7 +88,7 @@ export function ProjectManagementSiteVisitScreen() {
     },
     {
       id: "SV-002",
-      customerName: "Maria Garcia",
+      customerName: "[Customer Name 2]",
       propertyAddress: "456 Renewable Road, Melbourne VIC 3000",
       salesPerson: "Mike Chen",
       visitDate: "2024-01-14",
@@ -115,7 +115,7 @@ export function ProjectManagementSiteVisitScreen() {
     },
     {
       id: "SV-003",
-      customerName: "David Wilson",
+      customerName: "[Customer Name 3]",
       propertyAddress: "789 Green Avenue, Sydney NSW 2000",
       salesPerson: "Emma Davis",
       visitDate: "2024-01-13",
@@ -146,7 +146,7 @@ export function ProjectManagementSiteVisitScreen() {
   const onFieldSiteVisits = [
     {
       id: "OF-001",
-      customerName: "John Smith",
+      customerName: "[Customer Name]",
       propertyAddress: "123 Solar Street, Brisbane QLD 4000",
       technician: "Alex Thompson",
       visitDate: "2024-01-16",
@@ -171,7 +171,7 @@ export function ProjectManagementSiteVisitScreen() {
     },
     {
       id: "OF-002",
-      customerName: "Maria Garcia",
+      customerName: "[Customer Name 2]",
       propertyAddress: "456 Renewable Road, Melbourne VIC 3000",
       technician: "Lisa Park",
       visitDate: "2024-01-17",
