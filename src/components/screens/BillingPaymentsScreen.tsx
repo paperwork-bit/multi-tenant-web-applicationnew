@@ -89,26 +89,11 @@ export function BillingPaymentsScreen() {
   const [xeroSyncing, setXeroSyncing] = useState(false);
   const [lastXeroSync, setLastXeroSync] = useState<Date | null>(new Date(2025, 9, 28, 14, 30));
 
-  const invoices = [
-    { id: 1, invoice: "INV-2025-1042", customer: "John Smith", project: "Smith Residence", amount: 21500, paid: 21500, status: "paid", due: "Oct 15" },
-    { id: 2, invoice: "INV-2025-1041", customer: "Brown Industries", project: "Brown Warehouse", amount: 125000, paid: 87500, status: "partial", due: "Oct 20" },
-    { id: 3, invoice: "INV-2025-1040", customer: "Emily Davis", project: "Davis Home", amount: 18200, paid: 0, status: "outstanding", due: "Oct 10" },
-    { id: 4, invoice: "INV-2025-1039", customer: "Carlos Martinez", project: "Martinez Property", amount: 16500, paid: 4950, status: "partial", due: "Oct 18" },
-    { id: 5, invoice: "INV-2025-1038", customer: "Lisa Anderson", project: "Anderson Home", amount: 19800, paid: 19800, status: "paid", due: "Oct 5" },
-  ];
+  const invoices = [];
 
-  const arAgingData = [
-    { range: "Current", amount: 45000, fill: "#10b981" },
-    { range: "1-30 Days", amount: 28000, fill: "#f59e0b" },
-    { range: "31-60 Days", amount: 12000, fill: "#ef4444" },
-    { range: "60+ Days", amount: 8000, fill: "#991b1b" },
-  ];
+  const arAgingData = [];
 
-  const paymentMethods = [
-    { id: 1, method: "Bank Transfer", details: "BSB: 123-456 | Acc: 12345678" },
-    { id: 2, method: "Stripe Link", details: "Generate secure payment link" },
-    { id: 3, method: "Credit Card", details: "Process card payment" },
-  ];
+  const paymentMethods = [];
 
   // Filter invoices based on search and status
   const filteredInvoices = invoices.filter(invoice => {
