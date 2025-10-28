@@ -184,59 +184,6 @@ function App() {
     return (
       <div>
         <AuthScreen onLogin={handleLogin} />
-        <div className="fixed bottom-4 right-4 flex flex-col gap-2">
-          <div className="text-center mb-2">
-            <p className="text-white/80">Quick Demo Access:</p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleLogin("retailer", "sales", "retailer@xtechs.com")}
-            className="bg-background"
-          >
-            Sales Team →
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleLogin("retailer", "on-field", "retailer@xtechs.com")}
-            className="bg-background"
-          >
-            On-Field Team →
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleLogin("retailer", "project-management", "retailer@xtechs.com")}
-            className="bg-background"
-          >
-            PM Team →
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleLogin("retailer", "operations", "retailer@xtechs.com")}
-            className="bg-background"
-          >
-            Operations Team →
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleLogin("subcontractor", undefined, "subcontractor@xtechs.com")}
-            className="bg-background"
-          >
-            Subcontractor →
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleLogin("inspector", undefined, "inspector@xtechs.com")}
-            className="bg-background"
-          >
-            Inspector →
-          </Button>
-        </div>
       </div>
     );
   }
