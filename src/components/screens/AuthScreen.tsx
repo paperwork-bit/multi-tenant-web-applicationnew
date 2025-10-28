@@ -74,27 +74,6 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
               </TabsList>
 
               <TabsContent value="signin" className="space-y-4">
-                <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg">
-                  <p className="mb-2">Demo Credentials:</p>
-                  {userType === "retailer" && (
-                    <div className="space-y-1 text-muted-foreground">
-                      <p>Email: retailer@xtechs.com</p>
-                      <p>Password: demo123</p>
-                    </div>
-                  )}
-                  {userType === "subcontractor" && (
-                    <div className="space-y-1 text-muted-foreground">
-                      <p>Email: subcontractor@xtechs.com</p>
-                      <p>Password: demo123</p>
-                    </div>
-                  )}
-                  {userType === "inspector" && (
-                    <div className="space-y-1 text-muted-foreground">
-                      <p>Email: inspector@xtechs.com</p>
-                      <p>Password: demo123</p>
-                    </div>
-                  )}
-                </div>
 
                 {userType === "retailer" && (
                   <div className="space-y-2">
