@@ -120,99 +120,11 @@ export function AttendanceScreen() {
   };
 
   // Sample attendance data
-  const attendanceRecords: AttendanceRecord[] = [
-    {
-      id: 1,
-      date: "2025-10-20",
-      checkIn: "08:45 AM",
-      checkOut: "05:30 PM",
-      checkInLocation: "-27.4698, 153.0251 (Brisbane CBD)",
-      checkOutLocation: "-27.4698, 153.0251 (Brisbane CBD)",
-      duration: "8h 45m",
-      status: "present"
-    },
-    {
-      id: 2,
-      date: "2025-10-19",
-      checkIn: "09:00 AM",
-      checkOut: "05:15 PM",
-      checkInLocation: "-27.4698, 153.0251 (Brisbane CBD)",
-      checkOutLocation: "-27.4698, 153.0251 (Brisbane CBD)",
-      duration: "8h 15m",
-      status: "present"
-    },
-    {
-      id: 3,
-      date: "2025-10-18",
-      checkIn: "08:50 AM",
-      checkOut: "01:00 PM",
-      checkInLocation: "-27.4698, 153.0251 (Brisbane CBD)",
-      checkOutLocation: "-27.4698, 153.0251 (Brisbane CBD)",
-      duration: "4h 10m",
-      status: "half-day",
-      notes: "Medical appointment"
-    },
-    {
-      id: 4,
-      date: "2025-10-17",
-      checkIn: null,
-      checkOut: null,
-      checkInLocation: null,
-      checkOutLocation: null,
-      duration: null,
-      status: "leave"
-    },
-    {
-      id: 5,
-      date: "2025-10-16",
-      checkIn: "08:55 AM",
-      checkOut: "05:45 PM",
-      checkInLocation: "-27.4698, 153.0251 (Brisbane CBD)",
-      checkOutLocation: "-27.4698, 153.0251 (Brisbane CBD)",
-      duration: "8h 50m",
-      status: "present"
-    },
-    {
-      id: 6,
-      date: "2025-10-15",
-      checkIn: "09:15 AM",
-      checkOut: null,
-      checkInLocation: "-27.4698, 153.0251 (Brisbane CBD)",
-      checkOutLocation: null,
-      duration: null,
-      status: "present",
-      notes: "Missed check out"
-    },
-  ];
+  const attendanceRecords: AttendanceRecord[] = [];
 
-  const leaveBalances: LeaveBalance[] = [
-    { type: "Annual Leave", total: 20, used: 8, remaining: 12 },
-    { type: "Sick Leave", total: 10, used: 3, remaining: 7 },
-    { type: "Personal Leave", total: 5, used: 1, remaining: 4 },
-  ];
+  const leaveBalances: LeaveBalance[] = [];
 
-  const leaveRequests: LeaveRequest[] = [
-    {
-      id: 1,
-      type: "Annual Leave",
-      startDate: "2025-11-15",
-      endDate: "2025-11-19",
-      duration: "5 days",
-      reason: "Family vacation",
-      status: "pending",
-      appliedOn: "2025-10-20"
-    },
-    {
-      id: 2,
-      type: "Sick Leave",
-      startDate: "2025-10-17",
-      endDate: "2025-10-17",
-      duration: "1 day",
-      reason: "Flu",
-      status: "approved",
-      appliedOn: "2025-10-16"
-    },
-  ];
+  const leaveRequests: LeaveRequest[] = [];
 
   const handleEditAttendance = (record: AttendanceRecord) => {
     setSelectedAttendance(record);
