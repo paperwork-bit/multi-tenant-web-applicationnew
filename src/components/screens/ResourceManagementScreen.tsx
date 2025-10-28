@@ -435,6 +435,7 @@ export function ResourceManagementScreen() {
           </Button>
           <Button onClick={() => {
             setSelectedResource(null);
+            setFormData({ role: "", department: "", employeeId: "" });
             setShowAddDialog(true);
           }}>
             <UserPlus className="w-4 h-4 mr-2" />
