@@ -37,7 +37,7 @@ export function ProposalScreen() {
                 Pending Signature
               </Badge>
             </div>
-            <p className="text-muted-foreground">Smith Residence - John Smith</p>
+            <p className="text-muted-foreground">[Project Name] - [Customer Name]</p>
           </div>
         </div>
         <div className="flex gap-3">

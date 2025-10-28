@@ -139,7 +139,7 @@ export function ProjectManagementScreen() {
       projects: [
         {
           id: 2,
-          title: "Johnson Commercial",
+          title: "Sample Project",
           assignee: "TB",
           assignees: ["Team B", "Mike Chen", "Lisa Anderson"],
           date: "Nov 5 - Nov 10",

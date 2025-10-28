@@ -36,11 +36,11 @@ export function InspectionScreen() {
   const projects = [
     { 
       id: 1, 
-      name: "Smith Residence", 
+      name: "[Project Name]", 
       address: "123 Solar Street, Melbourne VIC 3000", 
       status: "pending-inspection", 
       inspector: null,
-      customerName: "John Smith",
+      customerName: "[Customer Name]",
       customerPhone: "+61 400 123 456",
       customerEmail: "john.smith@email.com",
       systemSize: "6.4 kW",
@@ -154,7 +154,7 @@ CERTIFICATE OF ELECTRICAL SAFETY
 ================================
 
 Certificate Number: CES2025004523
-Project: Smith Residence Solar Installation
+Project: [Project Name]
 System Size: 6.4kW
 Installation Date: October 15, 2025
 
@@ -238,7 +238,7 @@ This certificate confirms the electrical installation is safe and compliant.
         <div className="lg:col-span-2 space-y-6">
           <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleProjectClick(projects[0])}>
             <CardHeader>
-              <CardTitle>Project: Smith Residence</CardTitle>
+              <CardTitle>Project: [Project Name]</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
@@ -256,7 +256,7 @@ This certificate confirms the electrical installation is safe and compliant.
                 </div>
                 <div>
                   <p className="text-gray-600 mb-1">Customer</p>
-                  <p>John Smith</p>
+                  <p>[Customer Name]</p>
                 </div>
               </div>
 
@@ -673,7 +673,7 @@ This certificate confirms the electrical installation is safe and compliant.
             <div className="p-4 bg-gray-50 rounded-lg">
               <h4 className="font-semibold mb-2">Application Summary</h4>
               <div className="space-y-2 text-sm">
-                <p><strong>Project:</strong> Smith Residence (#4523)</p>
+                <p><strong>Project:</strong> [Project Name] (#4523)</p>
                 <p><strong>System Size:</strong> 6.4 kW</p>
                 <p><strong>Network Provider:</strong> {gridForm.networkProvider}</p>
                 <p><strong>Estimated Processing:</strong> 10-15 business days</p>
@@ -785,7 +785,7 @@ This certificate confirms the electrical installation is safe and compliant.
             <div className="space-y-2">
               <Label className="text-sm font-medium text-gray-600">System Details</Label>
               <div className="text-sm space-y-1">
-                <p><strong>Project:</strong> Smith Residence (#4523)</p>
+                <p><strong>Project:</strong> [Project Name] (#4523)</p>
                 <p><strong>System Size:</strong> 6.4 kW</p>
                 <p><strong>Installation Zone:</strong> Zone 4 (Melbourne)</p>
                 <p><strong>Deeming Period:</strong> 15 years</p>
@@ -829,7 +829,7 @@ This certificate confirms the electrical installation is safe and compliant.
                 </div>
                 <div className="p-4 border rounded-lg">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="font-semibold">Smith Residence Inspection</p>
+                    <p className="font-semibold">[Project Name] Inspection</p>
                     <Badge variant="outline">Pending</Badge>
                   </div>
                   <p className="text-gray-600 text-sm">Inspector: Not assigned</p>

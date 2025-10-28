@@ -136,7 +136,7 @@ export function RebateComplianceScreen() {
   const rebateApplications = [
     { 
       id: 1, 
-      project: "Smith Residence", 
+      project: "Sample Project", 
       type: "STC", 
       amount: "$4,200", 
       status: "approved", 
@@ -149,7 +149,7 @@ export function RebateComplianceScreen() {
     },
     { 
       id: 2, 
-      project: "Brown Warehouse", 
+      project: "Sample Project 2", 
       type: "LGC", 
       amount: "$12,500", 
       status: "in-review", 
@@ -162,7 +162,7 @@ export function RebateComplianceScreen() {
     },
     { 
       id: 3, 
-      project: "Davis Home", 
+      project: "Sample Project 3", 
       type: "STC", 
       amount: "$3,800", 
       status: "draft", 
@@ -274,7 +274,7 @@ Project #4523 • 6.4kW Solar System
 
 PROJECT INFORMATION
 ==================
-Project Name: Smith Residence Solar Installation
+Project Name: [Project Name]
 System Size: 6.4 kW
 Installation Date: 15/10/2025
 Number of Panels: 16
@@ -349,7 +349,7 @@ Certificate Details:
 - Meets all regulatory requirements
 - Valid for rebate submission
 
-Generated for: Smith Residence Solar Installation
+Generated for: [Project Name]
 Project #4523 • 6.4kW Solar System
 `;
     } else if (document.fileType === "JPG") {
@@ -401,7 +401,7 @@ Upload Date: ${document.uploadDate}
 Uploaded By: ${document.uploadedBy}
 
 CERTIFICATE DETAILS:
-This certifies that the solar installation at Smith Residence
+This certifies that the solar installation at [Property Address]
 has been completed in accordance with all applicable standards
 and regulations.
 
@@ -475,7 +475,7 @@ In a real application, the actual image file would be downloaded.`;
             Back to List
           </Button>
           <div>
-            <h1>STC Claim - Smith Residence</h1>
+            <h1>STC Claim - [Project Name]</h1>
             <p className="text-muted-foreground">Project #4523 • 6.4kW Solar System</p>
           </div>
         </div>
@@ -1135,7 +1135,7 @@ In a real application, the actual image file would be downloaded.`;
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span>Project Name:</span>
-                    <span>Smith Residence Solar Installation</span>
+                    <span>[Project Name]</span>
                   </div>
                   <div className="flex justify-between">
                     <span>System Size:</span>

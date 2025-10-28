@@ -370,23 +370,23 @@ export function DashboardScreen({ retailerTeam }: DashboardScreenProps) {
                   <div className="space-y-2">
                     <div className="flex justify-between items-center py-2">
                       <span className="text-muted-foreground">Monday</span>
-                      <span className="text-foreground font-medium">3 appointments</span>
+                      <span className="text-foreground font-medium">0 appointments</span>
                     </div>
                     <div className="flex justify-between items-center py-2">
                       <span className="text-muted-foreground">Tuesday</span>
-                      <span className="text-foreground font-medium">5 appointments</span>
+                      <span className="text-foreground font-medium">0 appointments</span>
                     </div>
                     <div className="flex justify-between items-center py-2">
                       <span className="text-muted-foreground">Wednesday</span>
-                      <span className="text-foreground font-medium">2 appointments</span>
+                      <span className="text-foreground font-medium">0 appointments</span>
                     </div>
                     <div className="flex justify-between items-center py-2">
                       <span className="text-muted-foreground">Thursday</span>
-                      <span className="text-foreground font-medium">4 appointments</span>
+                      <span className="text-foreground font-medium">0 appointments</span>
                     </div>
                     <div className="flex justify-between items-center py-2">
                       <span className="text-muted-foreground">Friday</span>
-                      <span className="text-foreground font-medium">3 appointments</span>
+                      <span className="text-foreground font-medium">0 appointments</span>
                     </div>
                   </div>
                 </div>
