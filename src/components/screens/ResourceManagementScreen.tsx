@@ -84,48 +84,16 @@ export function ResourceManagementScreen() {
   
   // Form state for new resource
   const [formData, setFormData] = useState({
-    name: "",
     role: "",
     department: "",
-    employeeId: "",
-    email: "",
-    phone: "",
-    location: "",
-    joinDate: "",
-    skills: "",
-    currentProject: "",
-    payType: "hourly",
-    payRate: "",
-    weekendMultiplier: "",
-    trainingDays: "",
-    weeklyHours: "40",
-    sickLeaveDays: "10",
-    annualLeaveDays: "15"
+    employeeId: ""
   });
 
   // Reset form when dialog opens/closes
   const handleDialogChange = (open: boolean) => {
     setShowAddDialog(open);
     if (!open) {
-      setFormData({
-        name: "",
-        role: "",
-        department: "",
-        employeeId: "",
-        email: "",
-        phone: "",
-        location: "",
-        joinDate: "",
-        skills: "",
-        currentProject: "",
-        payType: "hourly",
-        payRate: "",
-        weekendMultiplier: "",
-        trainingDays: "",
-        weeklyHours: "40",
-        sickLeaveDays: "10",
-        annualLeaveDays: "15"
-      });
+      setFormData({ role: "", department: "", employeeId: "" });
       setSelectedResource(null);
     } else if (selectedResource) {
       setFormData({
@@ -259,11 +227,7 @@ export function ResourceManagementScreen() {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Full Name</Label>
-            <Input 
-              placeholder="John Smith" 
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
+            <Input placeholder="John Smith" defaultValue={selectedResource?.name} />
           </div>
           <div className="space-y-2">
             <Label>Role</Label>
@@ -330,39 +294,22 @@ export function ResourceManagementScreen() {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Email</Label>
-            <Input 
-              type="email" 
-              placeholder="john@xtechs.com" 
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            />
+            <Input type="email" placeholder="john@xtechs.com" defaultValue={selectedResource?.email} />
           </div>
           <div className="space-y-2">
             <Label>Phone</Label>
-            <Input 
-              placeholder="+61 412 345 678" 
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-            />
+            <Input placeholder="+61 412 345 678" defaultValue={selectedResource?.phone} />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Location</Label>
-            <Input 
-              placeholder="Brisbane" 
-              value={formData.location}
-              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-            />
+            <Input placeholder="Brisbane" defaultValue={selectedResource?.location} />
           </div>
           <div className="space-y-2">
             <Label>Join Date</Label>
-            <Input 
-              type="date" 
-              value={formData.joinDate}
-              onChange={(e) => setFormData({ ...formData, joinDate: e.target.value })}
-            />
+            <Input type="date" defaultValue={selectedResource?.joinDate} />
           </div>
         </div>
 
@@ -488,25 +435,7 @@ export function ResourceManagementScreen() {
           </Button>
           <Button onClick={() => {
             setSelectedResource(null);
-            setFormData({
-              name: "",
-              role: "",
-              department: "",
-              employeeId: "",
-              email: "",
-              phone: "",
-              location: "",
-              joinDate: "",
-              skills: "",
-              currentProject: "",
-              payType: "hourly",
-              payRate: "",
-              weekendMultiplier: "",
-              trainingDays: "",
-              weeklyHours: "40",
-              sickLeaveDays: "10",
-              annualLeaveDays: "15"
-            });
+            setFormData({ role: "", department: "", employeeId: "" });
             setShowAddDialog(true);
           }}>
             <UserPlus className="w-4 h-4 mr-2" />
