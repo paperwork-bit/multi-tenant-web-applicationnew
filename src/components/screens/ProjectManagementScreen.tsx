@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -7,10 +7,295 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { Checkbox } from "../ui/checkbox";
 import { Textarea } from "../ui/textarea";
 import { KanbanCard } from "../KanbanCard";
-import { Calendar as CalendarIcon, Users, Clock, ChevronLeft, ChevronRight, Plus, CheckCircle, AlertCircle, DollarSign, BarChart3, Edit, Trash2, Eye, Download, Upload, X, MessageSquare, Phone, MapPin } from "lucide-react";
+import { Calendar as CalendarIcon, Users, Clock, ChevronLeft, ChevronRight, ChevronDown, Plus, CheckCircle, AlertCircle, DollarSign, BarChart3, Edit, Trash2, Eye, Download, Upload, X, MessageSquare, Phone, MapPin } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
+
+const fallbackAssigneeOptions = [
+  "Sarah Johnson",
+  "Mike Chen",
+  "Emily Davis",
+  "James Wilson",
+  "Lisa Anderson",
+  "Team A",
+  "Team B",
+  "Team C",
+];
+
+const MONTH_NAME_MAP: Record<string, number> = {
+  january: 0,
+  jan: 0,
+  february: 1,
+  feb: 1,
+  march: 2,
+  mar: 2,
+  april: 3,
+  apr: 3,
+  may: 4,
+  june: 5,
+  jun: 5,
+  july: 6,
+  jul: 6,
+  august: 7,
+  aug: 7,
+  september: 8,
+  sep: 8,
+  sept: 8,
+  october: 9,
+  oct: 9,
+  november: 10,
+  nov: 10,
+  december: 11,
+  dec: 11,
+};
+
+const normalizeDate = (date: Date | null) => {
+  if (!date || Number.isNaN(date.getTime())) return null;
+  const normalized = new Date(date);
+  normalized.setHours(0, 0, 0, 0);
+  return normalized;
+};
+
+const parseDateString = (
+  raw: string,
+  fallbackMonth: number,
+  fallbackYear: number,
+) => {
+  if (!raw) return null;
+  const direct = normalizeDate(new Date(raw));
+  if (direct) return direct;
+
+  const cleaned = raw
+    .replace(/(\d+)(st|nd|rd|th)/gi, "$1")
+    .replace(/[^a-z0-9\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return null;
+
+  const parts = cleaned.split(" ");
+  let monthIndex: number | undefined;
+  let day: number | undefined;
+  let year = fallbackYear;
+
+  parts.forEach((part) => {
+    const lower = part.toLowerCase();
+    if (MONTH_NAME_MAP[lower] !== undefined) {
+      monthIndex = MONTH_NAME_MAP[lower];
+      return;
+    }
+    if (/^\d{4}$/.test(part)) {
+      year = Number.parseInt(part, 10);
+      return;
+    }
+    if (/^\d{1,2}$/.test(part)) {
+      day = Number.parseInt(part, 10);
+    }
+  });
+
+  const resolvedMonth = monthIndex ?? fallbackMonth;
+  if (!day) return null;
+  return normalizeDate(new Date(year, resolvedMonth, day));
+};
+
+const parseProjectDateRange = (
+  project: any,
+  defaultMonth: number,
+  defaultYear: number,
+) => {
+  const startFromFields = normalizeDate(project?.startDate ? new Date(project.startDate) : null);
+  const endFromFields = normalizeDate(project?.endDate ? new Date(project.endDate) : null);
+
+  if (startFromFields && endFromFields) {
+    return { start: startFromFields, end: endFromFields };
+  }
+
+  const raw = typeof project?.date === "string" ? project.date.trim() : "";
+  if (!raw || raw.toLowerCase() === "tbd") {
+    return undefined;
+  }
+
+  const parts = raw.split("-").map((part) => part.trim());
+  const [startPart, endPart] = [parts[0], parts[1] ?? parts[0]];
+
+  const start = parseDateString(startPart, defaultMonth, defaultYear);
+  const end = parseDateString(
+    endPart,
+    start ? start.getMonth() : defaultMonth,
+    start ? start.getFullYear() : defaultYear,
+  );
+
+  if (!start && !end) return undefined;
+
+  if (start && end) {
+    return { start, end };
+  }
+
+  const single = start ?? end;
+  return single
+    ? {
+        start: single,
+        end: single,
+      }
+    : undefined;
+};
+
+const buildMonthlyCalendar = (
+  columnsData: any[] | null,
+  monthDate: Date,
+) => {
+  const reference = new Date(monthDate);
+  const month = reference.getMonth();
+  const year = reference.getFullYear();
+  const firstOfMonth = new Date(year, month, 1);
+  firstOfMonth.setHours(0, 0, 0, 0);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leadingBlankCount = firstOfMonth.getDay();
+
+  const projects = (columnsData ?? []).flatMap((column) => column.projects || []);
+
+  const days = Array.from({ length: daysInMonth }, (_, index) => {
+    const dayDate = new Date(year, month, index + 1);
+    dayDate.setHours(0, 0, 0, 0);
+
+    const projectsForDay = projects.filter((project) => {
+      const range = parseProjectDateRange(project, month, year);
+      if (!range?.start || !range?.end) return false;
+      return dayDate >= range.start && dayDate <= range.end;
+    });
+
+    return {
+      date: dayDate,
+      projects: projectsForDay,
+    };
+  });
+
+  const totalCells = leadingBlankCount + days.length;
+  const trailingBlankCount = (7 - (totalCells % 7)) % 7;
+
+  return {
+    leadingBlankCount,
+    trailingBlankCount,
+    days,
+  };
+};
+
+interface AssigneeMultiSelectProps {
+  label?: string;
+  value: string[];
+  onChange: (next: string[]) => void;
+  placeholder: string;
+  options: string[];
+}
+
+const AssigneeMultiSelect: React.FC<AssigneeMultiSelectProps> = ({
+  label,
+  value,
+  onChange,
+  placeholder,
+  options,
+}) => {
+  const [open, setOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const uniqueOptions = React.useMemo(
+    () => Array.from(new Set(options)).sort((a, b) => a.localeCompare(b)),
+    [options],
+  );
+
+  const filteredOptions = React.useMemo(
+    () =>
+      uniqueOptions.filter((option) =>
+        option.toLowerCase().includes(searchTerm.toLowerCase()),
+      ),
+    [uniqueOptions, searchTerm],
+  );
+
+  const displayText = value.length ? value.join(", ") : placeholder;
+
+  const toggleOption = (option: string) => {
+    if (value.includes(option)) {
+      onChange(value.filter((item) => item !== option));
+    } else {
+      onChange([...value, option]);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {label ? <Label>{label}</Label> : null}
+      <Popover
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) setSearchTerm("");
+        }}
+        modal={false}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            type="button"
+            className="w-full justify-between"
+            onClick={() => setOpen((prev) => !prev)}
+          >
+            <span className={displayText ? "truncate" : "text-muted-foreground"}>
+              {displayText || placeholder}
+            </span>
+            <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-64 p-0" align="start" sideOffset={4}>
+          <div className="p-2 space-y-2">
+            <Input
+              autoFocus
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder={`Search ${(label ?? "assignees").toLowerCase()}...`}
+            />
+            <div className="max-h-48 overflow-y-auto">
+              {filteredOptions.length === 0 ? (
+                <p className="px-2 py-4 text-sm text-muted-foreground">
+                  No resources found.
+                </p>
+              ) : (
+                filteredOptions.map((option) => {
+                  const selected = value.includes(option);
+                  return (
+                    <label
+                      key={option}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-muted"
+                    >
+                      <Checkbox
+                        checked={selected}
+                        onCheckedChange={() => toggleOption(option)}
+                      />
+                      <span className="truncate text-sm">{option}</span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+            {value.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                className="w-full justify-between"
+                onClick={() => onChange([])}
+              >
+                Clear selection
+              </Button>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+};
 
 export function ProjectManagementScreen() {
   // Test if component renders
@@ -26,8 +311,19 @@ export function ProjectManagementScreen() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedTeamMember, setSelectedTeamMember] = useState(null);
   const [selectedAvailability, setSelectedAvailability] = useState(null);
-  const [currentMonth, setCurrentMonth] = useState("October 2025");
-  const [currentWeek, setCurrentWeek] = useState("Week of Oct 14, 2025");
+  const [calendarMonthDate, setCalendarMonthDate] = useState(() => {
+    const date = new Date();
+    date.setDate(1);
+    date.setHours(0, 0, 0, 0);
+    return date;
+  });
+  const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    const diff = date.getDay();
+    date.setDate(date.getDate() - diff);
+    return date;
+  });
   const [calendarViewType, setCalendarViewType] = useState("weekly"); // "weekly" or "monthly"
   const [showScheduleDetails, setShowScheduleDetails] = useState(false);
   const [selectedScheduleItem, setSelectedScheduleItem] = useState(null);
@@ -88,6 +384,83 @@ export function ProjectManagementScreen() {
     batteryBrand: "",
     evChargerBrand: ""
   });
+  const [resourceNames, setResourceNames] = useState<string[]>([]);
+  const currentMonthLabel = React.useMemo(
+    () =>
+      calendarMonthDate.toLocaleDateString(undefined, {
+        month: "long",
+        year: "numeric",
+      }),
+    [calendarMonthDate],
+  );
+  const currentWeekLabel = React.useMemo(() => {
+    const start = new Date(calendarWeekStart);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    const includeYearInStart = start.getFullYear() !== end.getFullYear();
+    const startLabel = start.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: includeYearInStart ? "numeric" : undefined,
+    });
+    const endLabel = end.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    return `Week of ${startLabel} - ${endLabel}`;
+  }, [calendarWeekStart]);
+
+  useEffect(() => {
+    const loadResources = () => {
+      try {
+        const raw = localStorage.getItem("xtr_resources");
+        const list = raw ? JSON.parse(raw) : [];
+        const names = (Array.isArray(list) ? list : [])
+          .filter((item: any) => item && typeof item.name === "string" && item.name.trim().length > 0)
+          .map((item: any) => item.name.trim());
+        const uniqueNames = Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
+        setResourceNames(uniqueNames);
+      } catch {
+        setResourceNames([]);
+      }
+    };
+
+    loadResources();
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "xtr_resources") {
+        loadResources();
+      }
+    };
+
+    const handleBroadcast = (_event: Event) => {
+      loadResources();
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("xtr-resources-updated", handleBroadcast);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("xtr-resources-updated", handleBroadcast);
+    };
+  }, []);
+
+  const newProjectAssigneeOptions = React.useMemo(
+    () => (resourceNames.length > 0 ? resourceNames : fallbackAssigneeOptions),
+    [resourceNames],
+  );
+
+  const editingAssigneeOptions = React.useMemo(() => {
+    const base = resourceNames.length > 0 ? resourceNames : fallbackAssigneeOptions;
+    const extras = editingProject?.assignees ?? [];
+    return Array.from(new Set([...base, ...extras]));
+  }, [resourceNames, editingProject?.assignees]);
+  const monthlyCalendar = React.useMemo(
+    () => buildMonthlyCalendar(columns ?? kanbanColumns, calendarMonthDate),
+    [columns, calendarMonthDate],
+  );
 
   const projects = [];
 
@@ -404,8 +777,6 @@ export function ProjectManagementScreen() {
 
   const weeklySchedule = [];
 
-  const monthlySchedule = [];
-
   // Handler functions
   const handleExportSchedule = () => {
     setShowExportDialog(true);
@@ -440,8 +811,22 @@ export function ProjectManagementScreen() {
   };
 
   const handleCalendarNavigation = (direction) => {
-    // This would update the calendar view
-    console.log(`Navigate ${direction} in calendar`);
+    const delta = direction === "next" ? 1 : -1;
+
+    if (calendarViewType === "monthly") {
+      setCalendarMonthDate((previous) => {
+        const next = new Date(previous.getFullYear(), previous.getMonth() + delta, 1);
+        next.setHours(0, 0, 0, 0);
+        return next;
+      });
+    } else {
+      setCalendarWeekStart((previous) => {
+        const next = new Date(previous);
+        next.setDate(next.getDate() + delta * 7);
+        next.setHours(0, 0, 0, 0);
+        return next;
+      });
+    }
   };
 
   const handleScheduleItemClick = (scheduleItem) => {
@@ -537,6 +922,8 @@ export function ProjectManagementScreen() {
       date: newProject.startDate && newProject.endDate ? 
             `${new Date(newProject.startDate).toLocaleDateString()} - ${new Date(newProject.endDate).toLocaleDateString()}` : 
             "TBD",
+      startDate: newProject.startDate || null,
+      endDate: newProject.endDate || null,
       tags: [
         newProject.systemSize ? `${newProject.systemSize}kW System` : "System",
         newProject.clientType === "builder" ? "Builder" : "Residential"
@@ -799,7 +1186,7 @@ export function ProjectManagementScreen() {
                   <Button variant="outline" size="sm" onClick={() => handleCalendarNavigation('previous')}>
                     <ChevronLeft className="w-4 h-4" />
                   </Button>
-                  <span>{currentMonth}</span>
+                  <span>{currentMonthLabel}</span>
                   <Button variant="outline" size="sm" onClick={() => handleCalendarNavigation('next')}>
                     <ChevronRight className="w-4 h-4" />
                   </Button>
@@ -983,7 +1370,7 @@ export function ProjectManagementScreen() {
                   <Button variant="outline" size="sm" onClick={() => handleCalendarNavigation('previous')}>
                     <ChevronLeft className="w-4 h-4" />
                   </Button>
-                  <span>{calendarViewType === "weekly" ? currentWeek : currentMonth}</span>
+                  <span>{calendarViewType === "weekly" ? currentWeekLabel : currentMonthLabel}</span>
                   <Button variant="outline" size="sm" onClick={() => handleCalendarNavigation('next')}>
                     <ChevronRight className="w-4 h-4" />
                   </Button>
@@ -1021,18 +1408,20 @@ export function ProjectManagementScreen() {
                   ))}
                   
                   {/* Empty cells for calendar alignment */}
-                  {[1, 2, 3, 4, 5, 6].map((empty) => (
-                    <div key={empty} className="p-2 h-24 border rounded"></div>
+                  {Array.from({ length: monthlyCalendar.leadingBlankCount }, (_, index) => (
+                    <div key={`leading-${index}`} className="p-2 h-24 border rounded"></div>
                   ))}
-                  
+
                   {/* Calendar days with projects */}
-                  {monthlySchedule.map((day, index) => (
-                    <div key={index} className="p-2 h-24 border rounded">
-                      <div className="text-sm font-medium mb-1">{day.date.split(' ')[1]}</div>
+                  {monthlyCalendar.days.map((day, index) => (
+                    <div key={day.date.toISOString()} className="p-2 h-24 border rounded">
+                      <div className="text-sm font-medium mb-1">
+                        {day.date.getDate()}
+                      </div>
                       <div className="space-y-1">
                         {day.projects.map((project, idx) => (
                           <div
-                            key={idx}
+                            key={`${project.id ?? project.title}-${idx}`}
                             className="text-xs p-1 bg-primary/10 border border-primary/20 rounded text-primary cursor-pointer hover:bg-primary/20 transition-colors truncate"
                             onClick={() => handleScheduleItemClick(project)}
                             title={project.title}
@@ -1043,10 +1432,10 @@ export function ProjectManagementScreen() {
                       </div>
                     </div>
                   ))}
-                  
+
                   {/* Fill remaining calendar cells */}
-                  {Array.from({ length: 35 - 6 - monthlySchedule.length }, (_, i) => (
-                    <div key={`empty-${i}`} className="p-2 h-24 border rounded"></div>
+                  {Array.from({ length: monthlyCalendar.trailingBlankCount }, (_, i) => (
+                    <div key={`trailing-${i}`} className="p-2 h-24 border rounded"></div>
                   ))}
                 </div>
               )}
@@ -2008,26 +2397,17 @@ export function ProjectManagementScreen() {
                     <span className="text-gray-500 text-sm">No assignees selected</span>
                   )}
                 </div>
-                <Select onValueChange={(value) => {
-                  const currentAssignees = newProject.assignees || [];
-                  if (!currentAssignees.includes(value)) {
-                    setNewProject({ ...newProject, assignees: [...currentAssignees, value] });
+                <AssigneeMultiSelect
+                  label="Add assignee"
+                  value={newProject.assignees ?? []}
+                  onChange={(next) => setNewProject({ ...newProject, assignees: next })}
+                  placeholder={
+                    newProjectAssigneeOptions.length > 0
+                      ? "Select assignees"
+                      : "No resources found"
                   }
-                }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Add assignee" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Sarah Johnson">Sarah Johnson</SelectItem>
-                    <SelectItem value="Mike Chen">Mike Chen</SelectItem>
-                    <SelectItem value="Emily Davis">Emily Davis</SelectItem>
-                    <SelectItem value="James Wilson">James Wilson</SelectItem>
-                    <SelectItem value="Lisa Anderson">Lisa Anderson</SelectItem>
-                    <SelectItem value="Team A">Team A</SelectItem>
-                    <SelectItem value="Team B">Team B</SelectItem>
-                    <SelectItem value="Team C">Team C</SelectItem>
-                  </SelectContent>
-                </Select>
+                  options={newProjectAssigneeOptions}
+                />
               </div>
             </div>
 
@@ -2154,26 +2534,17 @@ export function ProjectManagementScreen() {
                             <span className="text-gray-500 text-sm">No assignees selected</span>
                           )}
                         </div>
-                        <Select onValueChange={(value) => {
-                          const currentAssignees = editingProject.assignees || [];
-                          if (!currentAssignees.includes(value)) {
-                            handleUpdateProject({ assignees: [...currentAssignees, value] });
+                        <AssigneeMultiSelect
+                          label="Add assignee"
+                          value={editingProject.assignees ?? []}
+                          onChange={(next) => handleUpdateProject({ assignees: next })}
+                          placeholder={
+                            editingAssigneeOptions.length > 0
+                              ? "Select assignees"
+                              : "No resources found"
                           }
-                        }}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Add assignee" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Sarah Johnson">Sarah Johnson</SelectItem>
-                            <SelectItem value="Mike Chen">Mike Chen</SelectItem>
-                            <SelectItem value="Emily Davis">Emily Davis</SelectItem>
-                            <SelectItem value="James Wilson">James Wilson</SelectItem>
-                            <SelectItem value="Lisa Anderson">Lisa Anderson</SelectItem>
-                            <SelectItem value="Team A">Team A</SelectItem>
-                            <SelectItem value="Team B">Team B</SelectItem>
-                            <SelectItem value="Team C">Team C</SelectItem>
-                          </SelectContent>
-                        </Select>
+                          options={editingAssigneeOptions}
+                        />
                       </div>
                     </div>
                   </div>

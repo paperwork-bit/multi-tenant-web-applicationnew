@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "./components/ui/button";
 import { Moon, Sun, Home, Users, Clipboard, FileText, Wrench, Calendar, FileCheck, Mail, Smartphone, Search, DollarSign, Menu, Upload, CheckSquare, Wallet, Clock } from "lucide-react";
 import companyLogo from "figma:asset/283027b090530df720ee88d43a780fd9aee6b0ad.png";
@@ -23,6 +23,58 @@ import { ApprovalsScreen } from "./components/screens/ApprovalsScreen";
 import { PayrollScreen } from "./components/screens/PayrollScreen";
 import { AttendanceScreen } from "./components/screens/AttendanceScreen";
 
+const SESSION_STORAGE_KEY = "xtr_session";
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+type SessionSnapshot = {
+  userRole: UserRole;
+  retailerTeam: RetailerTeam | null;
+  userEmail: string;
+  currentScreen: Screen;
+  lastActive: number;
+};
+
+const readStoredSession = (): SessionSnapshot | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) || {};
+    const storedRole = parsed.userRole as UserRole | undefined;
+    if (!storedRole) {
+      return null;
+    }
+    const storedLastActive = typeof parsed.lastActive === "number" ? parsed.lastActive : 0;
+    if (!storedLastActive || Date.now() - storedLastActive >= IDLE_TIMEOUT_MS) {
+      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+      return null;
+    }
+    const restoredTeam = storedRole === "retailer" ? (parsed.retailerTeam as RetailerTeam | null | undefined) ?? null : null;
+    const restoredEmail = typeof parsed.userEmail === "string" ? parsed.userEmail : "";
+    const restoredScreen = (parsed.currentScreen as Screen) || "dashboard";
+
+    return {
+      userRole: storedRole,
+      retailerTeam: restoredTeam,
+      userEmail: restoredEmail,
+      currentScreen: restoredScreen,
+      lastActive: storedLastActive,
+    };
+  } catch (error) {
+    console.error("Failed to parse stored session", error);
+    try {
+      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch (cleanupError) {
+      console.error("Failed to clear invalid session", cleanupError);
+    }
+    return null;
+  }
+};
+
 type Screen =
   | "auth"
   | "dashboard"
@@ -41,10 +93,16 @@ type Screen =
 type UserRole = "retailer" | "subcontractor" | "inspector";
 
 function App() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>("auth");
-  const [userRole, setUserRole] = useState<UserRole | null>(null);
-  const [retailerTeam, setRetailerTeam] = useState<RetailerTeam | null>(null);
-  const [userEmail, setUserEmail] = useState<string>("");
+  const storedSessionRef = useRef<SessionSnapshot | null>(null);
+  if (storedSessionRef.current === null && typeof window !== "undefined") {
+    storedSessionRef.current = readStoredSession();
+  }
+  const initialSession = storedSessionRef.current;
+
+  const [currentScreen, setCurrentScreen] = useState<Screen>(() => initialSession?.currentScreen ?? "auth");
+  const [userRole, setUserRole] = useState<UserRole | null>(() => initialSession?.userRole ?? null);
+  const [retailerTeam, setRetailerTeam] = useState<RetailerTeam | null>(() => initialSession?.retailerTeam ?? null);
+  const [userEmail, setUserEmail] = useState<string>(() => initialSession?.userEmail ?? "");
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // Firebase removed
@@ -52,6 +110,24 @@ function App() {
   // Firebase removed
 
   // (Rolled back) no Firebase auth persistence
+
+  const lastActivityRef = useRef<number>(initialSession?.lastActive ?? Date.now());
+
+  const handleLogout = useCallback(() => {
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    } catch (error) {
+      console.error("Failed to clear session", error);
+    }
+    storedSessionRef.current = null;
+    setUserRole(null);
+    setRetailerTeam(null);
+    setUserEmail("");
+    setCurrentScreen("auth");
+    lastActivityRef.current = Date.now();
+  }, []);
 
 
   const toggleDarkMode = () => {
@@ -61,68 +137,183 @@ function App() {
 
   const handleLogin = (role: UserRole, team?: RetailerTeam, email?: string) => {
     console.log("Login attempt:", { role, team, email });
-    // Grant project management module access for specific user
-    if (email && email.toLowerCase() === "neil@xtechsrenewables.com.au") {
-      // Enforce Project Management-only for Neil
-      if (role !== "retailer" || team !== "project-management") {
-        alert("Access denied: This account is restricted to Project Management team. Please select Project Management to continue.");
+    const normalizedEmail = (email || "").trim();
+    const lowerEmail = normalizedEmail.toLowerCase();
+
+    let resolvedRole: UserRole = role;
+    let resolvedTeam: RetailerTeam | null = role === "retailer" ? team ?? null : null;
+
+    const enforceRetailerTeam = (expectedTeam: RetailerTeam, message: string) => {
+      if (role !== "retailer" || team !== expectedTeam) {
+        alert(message);
+        resolvedRole = role;
+        resolvedTeam = role === "retailer" ? team ?? null : null;
+        return false;
+      }
+      resolvedRole = "retailer";
+      resolvedTeam = expectedTeam;
+      return true;
+    };
+
+    if (lowerEmail === "neil@xtechsrenewables.com.au") {
+      if (!enforceRetailerTeam("project-management", "Access denied: This account is restricted to Project Management team. Please select Project Management to continue.")) {
         return;
       }
-      setUserRole("retailer");
-      setRetailerTeam("project-management");
-    } else if (email && email.toLowerCase() === "james@xtechsrenewables.com.au") {
-      // Enforce Sales-only access for James
-      if (role !== "retailer" || team !== "sales") {
-        alert("Access denied: This account is restricted to Sales team. Please select Sales Team to continue.");
+    } else if (lowerEmail === "james@xtechsrenewables.com.au") {
+      if (!enforceRetailerTeam("sales", "Access denied: This account is restricted to Sales team. Please select Sales Team to continue.")) {
         return;
       }
-      setUserRole("retailer");
-      setRetailerTeam("sales");
-    } else if (email && email.toLowerCase() === "paperwork@xtechsrenewables.com.au") {
-      // Enforce Operations-only access for Paperwork
-      if (role !== "retailer" || team !== "operations") {
-        alert("Access denied: This account is restricted to Operations team. Please select Operations to continue.");
+    } else if (lowerEmail === "paperwork@xtechsrenewables.com.au") {
+      if (!enforceRetailerTeam("operations", "Access denied: This account is restricted to Operations team. Please select Operations to continue.")) {
         return;
       }
-      setUserRole("retailer");
-      setRetailerTeam("operations");
-    } else if (email && email.toLowerCase() === "ashely@xtechsrenewables.com.au") {
-      // Enforce On-Field only for Ashely
-      if (role !== "retailer" || team !== "on-field") {
-        alert("Access denied: This account is restricted to On-Field team. Please select On-Field to continue.");
+    } else if (lowerEmail === "ashely@xtechsrenewables.com.au") {
+      if (!enforceRetailerTeam("on-field", "Access denied: This account is restricted to On-Field team. Please select On-Field to continue.")) {
         return;
       }
-      setUserRole("retailer");
-      setRetailerTeam("on-field");
-    } else if (email && email.toLowerCase() === "liam@xtechsrenewables.com.au") {
-      // Enforce On-Field only for Liam
-      if (role !== "retailer" || team !== "on-field") {
-        alert("Access denied: This account is restricted to On-Field team. Please select On-Field to continue.");
+    } else if (lowerEmail === "liam@xtechsrenewables.com.au") {
+      if (!enforceRetailerTeam("on-field", "Access denied: This account is restricted to On-Field team. Please select On-Field to continue.")) {
         return;
       }
-      setUserRole("retailer");
-      setRetailerTeam("on-field");
+    }
+
+    setUserRole(resolvedRole);
+    if (resolvedRole === "retailer") {
+      setRetailerTeam(resolvedTeam);
     } else {
-      setUserRole(role);
-      if (role === "retailer" && team) {
-        setRetailerTeam(team);
-      }
+      setRetailerTeam(null);
     }
-    if (email) {
-      setUserEmail(email);
-      console.log("User email set to:", email);
-    }
+    setUserEmail(normalizedEmail);
+    console.log("User email set to:", normalizedEmail);
     setCurrentScreen("dashboard");
+
+    const now = Date.now();
+    lastActivityRef.current = now;
+    const sessionPayload = {
+      userRole: resolvedRole,
+      retailerTeam: resolvedRole === "retailer" ? resolvedTeam : null,
+      userEmail: normalizedEmail,
+      currentScreen: "dashboard" as Screen,
+      lastActive: now,
+    };
+    storedSessionRef.current = sessionPayload;
+    try {
+      window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionPayload));
+    } catch (error) {
+      console.error("Failed to persist session", error);
+    }
   };
 
-  const handleLogout = () => {
-    setUserRole(null);
-    setRetailerTeam(null);
-    setUserEmail("");
-    setCurrentScreen("auth");
-  };
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SESSION_STORAGE_KEY);
+      if (!stored) {
+        return;
+      }
+      const parsed = JSON.parse(stored);
+      if (!parsed || !parsed.userRole) {
+        return;
+      }
+      const storedLastActive = typeof parsed.lastActive === "number" ? parsed.lastActive : 0;
+      if (Date.now() - storedLastActive >= IDLE_TIMEOUT_MS) {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+        return;
+      }
+      const restoredRole = parsed.userRole as UserRole;
+      const restoredTeam = restoredRole === "retailer" ? (parsed.retailerTeam as RetailerTeam | null | undefined) ?? null : null;
+      const restoredScreen = (parsed.currentScreen as Screen) || "dashboard";
+      const restoredEmail = typeof parsed.userEmail === "string" ? parsed.userEmail : "";
 
-  // (Rolled back) no idle auto-logout
+      setUserRole(restoredRole);
+      setRetailerTeam(restoredTeam);
+      setUserEmail(restoredEmail);
+      setCurrentScreen(restoredScreen);
+
+      lastActivityRef.current = Date.now();
+      const refreshedPayload = {
+        userRole: restoredRole,
+        retailerTeam: restoredTeam,
+        userEmail: restoredEmail,
+        currentScreen: restoredScreen,
+        lastActive: lastActivityRef.current,
+      };
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(refreshedPayload));
+    } catch (error) {
+      console.error("Failed to restore session", error);
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!userRole) {
+      return;
+    }
+    const now = Date.now();
+    lastActivityRef.current = now;
+    const payload = {
+      userRole,
+      retailerTeam: userRole === "retailer" ? retailerTeam : null,
+      userEmail,
+      currentScreen,
+      lastActive: now,
+    } as SessionSnapshot;
+    storedSessionRef.current = payload;
+    try {
+      window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+      console.error("Failed to persist session", error);
+    }
+  }, [userRole, retailerTeam, userEmail, currentScreen]);
+
+  useEffect(() => {
+    if (!userRole) {
+      return;
+    }
+
+    const updateActivity = () => {
+      const now = Date.now();
+      lastActivityRef.current = now;
+      const payload = {
+        userRole,
+        retailerTeam: userRole === "retailer" ? retailerTeam : null,
+        userEmail,
+        currentScreen,
+        lastActive: now,
+      } as SessionSnapshot;
+      storedSessionRef.current = payload;
+      try {
+        window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
+      } catch (error) {
+        console.error("Failed to persist session", error);
+      }
+    };
+
+    const activityEvents: Array<keyof WindowEventMap> = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "scroll",
+      "touchstart",
+      "touchmove",
+    ];
+
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, updateActivity));
+    updateActivity();
+
+    const intervalId = window.setInterval(() => {
+      if (Date.now() - lastActivityRef.current >= IDLE_TIMEOUT_MS) {
+        window.clearInterval(intervalId);
+        activityEvents.forEach((eventName) => window.removeEventListener(eventName, updateActivity));
+        alert("You have been logged out due to inactivity.");
+        handleLogout();
+      }
+    }, 60 * 1000);
+
+    return () => {
+    activityEvents.forEach((eventName) => window.removeEventListener(eventName, updateActivity));
+    window.clearInterval(intervalId);
+  };
+}, [userRole, retailerTeam, userEmail, currentScreen, handleLogout]);
 
   // Navigation items based on user role and team
   const getNavItems = () => {

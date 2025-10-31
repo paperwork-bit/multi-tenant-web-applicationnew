@@ -10,11 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "../ui/command";
 import { Checkbox } from "../ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Badge } from "../ui/badge";
-import { Plus, Search, Filter, Mail, X, MessageSquare, Calendar, User, Phone, MapPin, Clock, DollarSign, Zap, Home, Building, Car, Battery, Sun, Wind, Droplets, Thermometer, Lightbulb, Wifi, Shield, CheckCircle, AlertCircle, Star, Eye, Edit, Trash2, Download, Upload, Send, Copy, ExternalLink, ArrowRight, ArrowLeft, ChevronDown, ChevronUp, PlusCircle, MinusCircle, Settings, MoreHorizontal, MoreVertical, Menu, Grid, List, Filter as FilterIcon, SortAsc, SortDesc, RefreshCw, Save, FileText, Image, Video, Music, File, Folder, FolderOpen, Archive, Trash, Share, Lock, Unlock, Key, UserCheck, UserX, Users, UserPlus, UserMinus, Heart, HeartOff, ThumbsUp, ThumbsDown, Flag, Bookmark, BookmarkCheck, Tag, Tags, Hash, AtSign, Hash as HashIcon, Percent, Plus as PlusIcon, Minus, Divide, X as XIcon, Equal, NotEqual, GreaterThan, LessThan, GreaterThanOrEqual, LessThanOrEqual, Infinity, Pi, Sigma, Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Eta, Theta, Iota, Kappa, Lambda, Mu, Nu, Xi, Omicron, Rho, Tau, Upsilon, Phi, Chi, Psi, Omega, Check } from "lucide-react";
+import { Plus, Search, Filter, Mail, X, MessageSquare, Calendar, User, Phone, MapPin, Clock, DollarSign, Zap, Home, Building, Car, Battery, Sun, Wind, Droplets, Thermometer, Lightbulb, Wifi, Shield, CheckCircle, AlertCircle, Star, Eye, Edit, Trash2, Download, Upload, Send, Copy, ExternalLink, ArrowRight, ArrowLeft, ChevronDown, ChevronUp, PlusCircle, MinusCircle, Settings, MoreHorizontal, MoreVertical, Menu, Grid, List, Filter as FilterIcon, SortAsc, SortDesc, RefreshCw, Save, FileText, Image, Video, Music, File, Folder, FolderOpen, Archive, Trash, Share, Lock, Unlock, Key, UserCheck, UserX, Users, UserPlus, UserMinus, Heart, HeartOff, ThumbsUp, ThumbsDown, Flag, Bookmark, BookmarkCheck, Tag, Tags, Hash, AtSign, Hash as HashIcon, Percent, Plus as PlusIcon, Minus, Divide, X as XIcon, Equal, NotEqual, GreaterThan, LessThan, GreaterThanOrEqual, LessThanOrEqual, Infinity, Pi, Sigma, Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Eta, Theta, Iota, Kappa, Lambda, Mu, Nu, Xi, Omicron, Rho, Tau, Upsilon, Phi, Chi, Psi, Omega } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 
 interface LeadsCRMScreenProps {
@@ -167,6 +166,7 @@ interface ResourceMultiSelectProps {
 
 const ResourceMultiSelect: React.FC<ResourceMultiSelectProps> = ({ label, value, onChange, placeholder, options }) => {
   const [open, setOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const toggleOption = (option: string) => {
     if (value.includes(option)) {
@@ -177,44 +177,76 @@ const ResourceMultiSelect: React.FC<ResourceMultiSelectProps> = ({ label, value,
   };
 
   const displayText = value.length ? value.join(", ") : placeholder;
+  const filteredOptions = options.filter((option) =>
+    option.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div>
       <Label>{label}</Label>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) {
+            setSearchTerm("");
+          }
+        }}
+        modal={false}
+      >
         <PopoverTrigger asChild>
           <Button
             variant="outline"
             role="combobox"
             className="w-full justify-between"
-            disabled={options.length === 0}
+            type="button"
+            onClick={() => setOpen((prev) => !prev)}
           >
             <span className={displayText ? "truncate" : "text-muted-foreground"}>{displayText || placeholder}</span>
             <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-56 p-0">
-          <Command>
-            <CommandInput placeholder={`Search ${label.toLowerCase()}...`} />
-            <CommandList>
-              <CommandEmpty>No resources found.</CommandEmpty>
-              <CommandGroup>
-                {options.map((option) => {
+        <PopoverContent className="w-64 p-0" align="start" sideOffset={4}>
+          <div className="p-2 space-y-2">
+            <Input
+              autoFocus
+              placeholder={`Search ${label.toLowerCase()}...`}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <div className="max-h-48 overflow-y-auto">
+              {filteredOptions.length === 0 ? (
+                <p className="px-2 py-4 text-sm text-muted-foreground">No resources found.</p>
+              ) : (
+                filteredOptions.map((option) => {
                   const selected = value.includes(option);
                   return (
-                    <CommandItem
+                    <label
                       key={option}
-                      value={option}
-                      onSelect={() => toggleOption(option)}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-muted"
                     >
-                      <Check className={`mr-2 h-4 w-4 ${selected ? "opacity-100" : "opacity-0"}`} />
-                      {option}
-                    </CommandItem>
+                      <Checkbox
+                        checked={selected}
+                        onCheckedChange={() => toggleOption(option)}
+                      />
+                      <span className="truncate text-sm">{option}</span>
+                    </label>
                   );
-                })}
-              </CommandGroup>
-            </CommandList>
-          </Command>
+                })
+              )}
+            </div>
+            {value.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-between"
+                type="button"
+                onClick={() => onChange([])}
+              >
+                Clear selection
+              </Button>
+            )}
+          </div>
         </PopoverContent>
       </Popover>
     </div>
