@@ -395,7 +395,7 @@ Phone: 1300 XTECH (98324)
                 <p className="text-gray-600">Total AR</p>
                 <h2 className="text-2xl font-bold mt-2">$93,000</h2>
                 <p className="text-sm text-blue-600">Outstanding receivables</p>
-              </div>
+            </div>
               <div className="p-3 bg-blue-100 rounded-full">
                 <DollarSign className="w-6 h-6 text-blue-600" />
               </div>
@@ -410,7 +410,7 @@ Phone: 1300 XTECH (98324)
                 <p className="text-gray-600">Overdue</p>
                 <h2 className="text-2xl font-bold mt-2">$20,000</h2>
                 <p className="text-sm text-red-600">3 overdue invoices</p>
-              </div>
+            </div>
               <div className="p-3 bg-red-100 rounded-full">
                 <AlertCircle className="w-6 h-6 text-red-600" />
               </div>
@@ -425,7 +425,7 @@ Phone: 1300 XTECH (98324)
                 <p className="text-gray-600">This Month</p>
                 <h2 className="text-2xl font-bold mt-2">$108,300</h2>
                 <p className="text-sm text-green-600">+15% from last month</p>
-              </div>
+            </div>
               <div className="p-3 bg-green-100 rounded-full">
                 <CreditCard className="w-6 h-6 text-green-600" />
               </div>
@@ -440,7 +440,7 @@ Phone: 1300 XTECH (98324)
                 <p className="text-gray-600">Avg Payment Time</p>
                 <h2 className="text-2xl font-bold mt-2">12 days</h2>
                 <p className="text-sm text-purple-600">From invoice date</p>
-              </div>
+            </div>
               <div className="p-3 bg-purple-100 rounded-full">
                 <Clock className="w-6 h-6 text-purple-600" />
               </div>

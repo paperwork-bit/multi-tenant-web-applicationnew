@@ -87,7 +87,7 @@ export function PayrollScreen() {
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterStatus, setFilterStatus] = useState("pending");
   const [searchQuery, setSearchQuery] = useState("");
-  
+
   // New dialog states for enhanced functionality
   const [showStatsDialog, setShowStatsDialog] = useState(false);
   const [showPayrollSummaryDialog, setShowPayrollSummaryDialog] = useState(false);
@@ -258,11 +258,11 @@ export function PayrollScreen() {
           <Button variant="outline" onClick={handleViewHistory}>
             <Clock className="w-4 h-4 mr-2" />
             History
-          </Button>
+            </Button>
           <Button variant="outline" onClick={handleExportData}>
-            <Download className="w-4 h-4 mr-2" />
+              <Download className="w-4 h-4 mr-2" />
             Export
-          </Button>
+            </Button>
         </div>
       </div>
 
@@ -281,95 +281,95 @@ export function PayrollScreen() {
 
         {/* PAYROLL TAB */}
         <TabsContent value="payroll" className="space-y-6">
-          {/* Pay Period Info */}
+      {/* Pay Period Info */}
           <Card className="bg-primary/5 border-primary/20 cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleCardClick('pay-period')}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <Calendar className="w-8 h-8 text-primary" />
-                  <div>
-                    <p className="text-muted-foreground">Current Pay Period</p>
-                    <h3>{payPeriod.start} - {payPeriod.end}</h3>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-muted-foreground">Payment Date</p>
-                  <h3 className="text-primary">{payPeriod.paymentDate}</h3>
-                </div>
-                <div className="flex gap-2">
-                  {payrollApproved ? (
-                    <Badge className="bg-success text-success-foreground">
-                      <CheckCircle2 className="w-3 h-3 mr-1" />
-                      Approved
-                    </Badge>
-                  ) : (
-                    <Badge className="bg-warning text-warning-foreground">
-                      <Clock className="w-3 h-3 mr-1" />
-                      Pending Approval
-                    </Badge>
-                  )}
-                </div>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Calendar className="w-8 h-8 text-primary" />
+              <div>
+                <p className="text-muted-foreground">Current Pay Period</p>
+                <h3>{payPeriod.start} - {payPeriod.end}</h3>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+            <div className="text-right">
+              <p className="text-muted-foreground">Payment Date</p>
+              <h3 className="text-primary">{payPeriod.paymentDate}</h3>
+            </div>
+            <div className="flex gap-2">
+              {payrollApproved ? (
+                <Badge className="bg-success text-success-foreground">
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  Approved
+                </Badge>
+              ) : (
+                <Badge className="bg-warning text-warning-foreground">
+                  <Clock className="w-3 h-3 mr-1" />
+                  Pending Approval
+                </Badge>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
           {/* Payroll Stats */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleStatsClick('total-employees')}>
-              <CardContent className="p-6">
+          <CardContent className="p-6">
                 <div className="flex items-center">
-                  <Users className="w-8 h-8 text-primary" />
+              <Users className="w-8 h-8 text-primary" />
                   <div className="ml-4">
                     <p className="text-sm font-medium text-muted-foreground">Total Employees</p>
                     <p className="text-2xl font-bold">{stats.totalEmployees}</p>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+            </div>
+          </CardContent>
+        </Card>
 
             <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleStatsClick('total-hours')}>
-              <CardContent className="p-6">
+          <CardContent className="p-6">
                 <div className="flex items-center">
                   <Clock className="w-8 h-8 text-blue-600" />
                   <div className="ml-4">
                     <p className="text-sm font-medium text-muted-foreground">Total Hours</p>
                     <p className="text-2xl font-bold">{stats.totalHours}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
             <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleStatsClick('gross-pay')}>
-              <CardContent className="p-6">
+          <CardContent className="p-6">
                 <div className="flex items-center">
                   <DollarSign className="w-8 h-8 text-green-600" />
                   <div className="ml-4">
                     <p className="text-sm font-medium text-muted-foreground">Gross Pay</p>
                     <p className="text-2xl font-bold">${stats.totalGrossPay.toLocaleString()}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
             <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleStatsClick('net-pay')}>
-              <CardContent className="p-6">
+          <CardContent className="p-6">
                 <div className="flex items-center">
                   <TrendingUp className="w-8 h-8 text-purple-600" />
                   <div className="ml-4">
                     <p className="text-sm font-medium text-muted-foreground">Net Pay</p>
                     <p className="text-2xl font-bold">${stats.totalNetPay.toLocaleString()}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
           {/* Employee Table */}
-          <Card>
-            <CardHeader>
+      <Card>
+        <CardHeader>
               <CardTitle>Employee Payroll</CardTitle>
-            </CardHeader>
-            <CardContent>
+        </CardHeader>
+        <CardContent>
               {employees.length === 0 ? (
                 <div className="text-center py-8">
                   <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -377,42 +377,42 @@ export function PayrollScreen() {
                   <p className="text-sm text-muted-foreground">Employee payroll data will appear here</p>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Employee</TableHead>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Employee</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead>Hours</TableHead>
                       <TableHead>Gross Pay</TableHead>
                       <TableHead>Net Pay</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
                     {filteredEmployees.map((employee) => (
-                      <TableRow key={employee.id}>
-                        <TableCell>
-                          <div>
+                <TableRow key={employee.id}>
+                  <TableCell>
+                    <div>
                             <p className="font-medium">{employee.name}</p>
                             <p className="text-sm text-muted-foreground">{employee.employeeId}</p>
-                          </div>
-                        </TableCell>
+                    </div>
+                  </TableCell>
                         <TableCell>{employee.role}</TableCell>
                         <TableCell>{employee.hoursWorked}</TableCell>
                         <TableCell>${employee.grossPay.toLocaleString()}</TableCell>
                         <TableCell>${employee.netPay.toLocaleString()}</TableCell>
-                        <TableCell>
+                  <TableCell>
                           <Button variant="ghost" size="sm">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+                      <Eye className="w-4 h-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+            )}
+          </CardContent>
+        </Card>
         </TabsContent>
 
         {/* REIMBURSEMENTS TAB */}
@@ -471,7 +471,7 @@ export function PayrollScreen() {
           {/* Reimbursements Table */}
           <Card>
             <CardHeader>
-              <CardTitle>Reimbursement Claims</CardTitle>
+                <CardTitle>Reimbursement Claims</CardTitle>
             </CardHeader>
             <CardContent>
               {reimbursements.length === 0 ? (
@@ -481,29 +481,29 @@ export function PayrollScreen() {
                   <p className="text-sm text-muted-foreground">Reimbursement claims will appear here</p>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Employee</TableHead>
-                      <TableHead>Category</TableHead>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Employee</TableHead>
+                    <TableHead>Category</TableHead>
                       <TableHead>Amount</TableHead>
-                      <TableHead>Status</TableHead>
+                    <TableHead>Status</TableHead>
                       <TableHead>Date</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                     {filteredReimbursements.map((reimbursement) => (
                       <TableRow key={reimbursement.id}>
-                        <TableCell>
-                          <div>
+                      <TableCell>
+                        <div>
                             <p className="font-medium">{reimbursement.employeeName}</p>
                             <p className="text-sm text-muted-foreground">{reimbursement.employeeId}</p>
-                          </div>
-                        </TableCell>
+                        </div>
+                      </TableCell>
                         <TableCell>{reimbursement.category}</TableCell>
                         <TableCell>${reimbursement.totalAmount.toLocaleString()}</TableCell>
-                        <TableCell>
+                      <TableCell>
                           <Badge
                             variant={
                               reimbursement.status === "approved"
@@ -515,17 +515,17 @@ export function PayrollScreen() {
                           >
                             {reimbursement.status}
                           </Badge>
-                        </TableCell>
+                      </TableCell>
                         <TableCell>{reimbursement.expenseDate}</TableCell>
-                        <TableCell>
+                      <TableCell>
                           <Button variant="ghost" size="sm">
                             <Eye className="w-4 h-4" />
                           </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
               )}
             </CardContent>
           </Card>

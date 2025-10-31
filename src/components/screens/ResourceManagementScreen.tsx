@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState, useRef as useReactRef } from "react";
+import { db, firebaseEnabled } from "../../lib/firebase";
+import { collection, onSnapshot, addDoc, updateDoc, doc } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -46,6 +48,7 @@ import {
 
 interface Resource {
   id: number;
+  docId?: string; // Firestore document id (not used after rollback)
   name: string;
   role: string;
   department: string;
@@ -65,6 +68,7 @@ interface Resource {
   weeklyHours: number;
   lastActive: string;
   availability: 'available' | 'busy' | 'unavailable';
+  createdBy?: string;
 }
 
 export function ResourceManagementScreen() {
@@ -84,6 +88,13 @@ export function ResourceManagementScreen() {
   
   // Form state for new resource
   const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    location: "",
+    joinDate: "",
+    skills: "",
+    currentProject: "",
     role: "",
     department: "",
     employeeId: ""
@@ -93,10 +104,28 @@ export function ResourceManagementScreen() {
   const handleDialogChange = (open: boolean) => {
     setShowAddDialog(open);
     if (!open) {
-      setFormData({ role: "", department: "", employeeId: "" });
+      setFormData({
+        name: "",
+        email: "",
+        phone: "",
+        location: "",
+        joinDate: "",
+        skills: "",
+        currentProject: "",
+        role: "",
+        department: "",
+        employeeId: ""
+      });
       setSelectedResource(null);
     } else if (selectedResource) {
       setFormData({
+        name: selectedResource.name || "",
+        email: selectedResource.email || "",
+        phone: selectedResource.phone || "",
+        location: selectedResource.location || "",
+        joinDate: selectedResource.joinDate || "",
+        skills: (selectedResource.skills || []).join(", "),
+        currentProject: selectedResource.currentProject || "",
         role: selectedResource.role,
         department: selectedResource.department,
         employeeId: selectedResource.employeeId
@@ -150,7 +179,96 @@ export function ResourceManagementScreen() {
     return `XTR-${deptCode}-${roleCode}-${paddedNumber}`;
   };
 
-  const resources: Resource[] = [];
+  const [resources, setResources] = useState<Resource[]>([]);
+
+  // Persist resources locally (since backend was removed)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('xtr_resources');
+      if (saved) {
+        const parsed: Resource[] = JSON.parse(saved);
+        if (Array.isArray(parsed)) setResources(parsed);
+      }
+    } catch (e) {
+      console.error('[ResourceManagement] Failed to load saved resources', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('xtr_resources', JSON.stringify(resources));
+    } catch (e) {
+      console.error('[ResourceManagement] Failed to persist resources', e);
+    }
+  }, [resources]);
+
+  // Firestore realtime sync if Firebase is enabled
+  const firestoreHasDataRef = useReactRef<boolean>();
+  if (firestoreHasDataRef.current === undefined) firestoreHasDataRef.current = false;
+  useEffect(() => {
+    if (!firebaseEnabled || !db) return;
+    console.log('[ResourceManagement] Firestore enabled. Subscribing to resources...');
+    const unsub = onSnapshot(collection(db, 'resources'), (snap) => {
+      console.log('[ResourceManagement] Snapshot received. Docs:', snap.size);
+      const list: Resource[] = snap.docs.map((d) => {
+        const data: any = d.data();
+        return {
+          id: Number(data.id) || Date.now(),
+          docId: d.id,
+          name: data.name || '',
+          role: data.role || '',
+          department: data.department || '',
+          employeeId: data.employeeId || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          location: data.location || '',
+          skills: Array.isArray(data.skills) ? data.skills : (data.skills ? String(data.skills).split(',').map((s: string) => s.trim()) : []),
+          currentProject: data.currentProject,
+          joinDate: data.joinDate || '',
+          status: (data.status as any) || 'active',
+          performance: Number(data.performance ?? 80),
+          completedProjects: Number(data.completedProjects ?? 0),
+          certifications: Array.isArray(data.certifications) ? data.certifications : [],
+          payRate: Number(data.payRate ?? 0),
+          payType: (data.payType as any) || 'hourly',
+          weeklyHours: Number(data.weeklyHours ?? 40),
+          lastActive: data.lastActive || new Date().toISOString().split('T')[0],
+          availability: (data.availability as any) || 'available',
+          createdBy: data.createdBy || '',
+        };
+      });
+      if (list.length === 0 && !firestoreHasDataRef.current) {
+        // Do not clobber local data with an empty remote snapshot
+        try {
+          const saved = localStorage.getItem('xtr_resources');
+          if (saved) {
+            const parsed: Resource[] = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setResources(parsed);
+              // Bootstrap Firestore with local copy to make persistence durable
+              Promise.all(
+                parsed.map((r) => addDoc(collection(db, 'resources'), r as any).catch(() => null))
+              ).then(() => {
+                console.log('[ResourceManagement] Bootstrapped Firestore with local resources');
+              });
+            }
+            return;
+          }
+        } catch (e) {
+          console.warn('[ResourceManagement] No Firestore data and failed to read local backup', e);
+        }
+        setResources([]);
+        return;
+      }
+      setResources(list);
+      firestoreHasDataRef.current = list.length > 0;
+      // Also persist Firestore data locally for refresh/offline
+      try {
+        localStorage.setItem('xtr_resources', JSON.stringify(list));
+      } catch {}
+    });
+    return () => unsub();
+  }, []);
 
   const departments = ["all", "Sales", "On-Field", "Project Management", "Operations"];
 
@@ -164,14 +282,75 @@ export function ResourceManagementScreen() {
 
   const handleEdit = (resource: Resource) => {
     setSelectedResource(resource);
+    // Preload form with the selected resource to avoid race conditions with onOpenChange
+    setFormData({
+      name: resource.name || "",
+      email: resource.email || "",
+      phone: resource.phone || "",
+      location: resource.location || "",
+      joinDate: resource.joinDate || "",
+      skills: (resource.skills || []).join(", "),
+      currentProject: resource.currentProject || "",
+      role: resource.role || "",
+      department: resource.department || "",
+      employeeId: resource.employeeId || "",
+    });
     setShowAddDialog(true);
   };
 
-  const handleDeactivate = (id: number) => {
-    if (confirm("Are you sure you want to deactivate this resource? They will be marked as inactive but their data will be preserved.")) {
-      // Handle deactivate logic
-      console.log("Deactivate resource:", id);
-      alert("Resource has been deactivated successfully!");
+  // Ensure form data hydrates when a resource is selected and dialog opens
+  useEffect(() => {
+    if (showAddDialog && selectedResource) {
+      setFormData({
+        name: selectedResource.name || "",
+        email: selectedResource.email || "",
+        phone: selectedResource.phone || "",
+        location: selectedResource.location || "",
+        joinDate: selectedResource.joinDate || "",
+        skills: (selectedResource.skills || []).join(", "),
+        currentProject: selectedResource.currentProject || "",
+        role: selectedResource.role || "",
+        department: selectedResource.department || "",
+        employeeId: selectedResource.employeeId || "",
+      });
+    }
+  }, [showAddDialog, selectedResource]);
+
+  const handleToggleActive = (id: number) => {
+    const target = resources.find(r => r.id === id);
+    if (!target) return;
+    const toStatus = target.status === 'inactive' ? 'active' : 'inactive';
+    const confirmMsg = toStatus === 'inactive'
+      ? 'Are you sure you want to deactivate this resource?'
+      : 'Activate this resource?';
+    if (!confirm(confirmMsg)) return;
+    const applyLocal = () => setResources(prev => {
+      const next = prev.map(r => r.id === id ? { ...r, status: toStatus as any } : r);
+      try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
+      return next;
+    });
+    if (firebaseEnabled && db && target.docId) {
+      updateDoc(doc(db, 'resources', target.docId), { status: toStatus } as any)
+        .then(() => console.log('[ResourceManagement] Status updated to', toStatus))
+        .catch((e) => { console.error('[ResourceManagement] Firestore toggle failed', e); applyLocal(); });
+    } else {
+      applyLocal();
+    }
+  };
+
+  const handleDelete = (id: number) => {
+    if (!confirm('Delete this resource permanently? This cannot be undone.')) return;
+    const target = resources.find(r => r.id === id);
+    const applyLocal = () => setResources(prev => {
+      const next = prev.filter(r => r.id !== id);
+      try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
+      return next;
+    });
+    if (firebaseEnabled && db && target?.docId) {
+      // use update to mark deleted if needed; here we simply remove locally
+      applyLocal();
+    } else {
+      applyLocal();
     }
   };
 
@@ -218,8 +397,123 @@ export function ResourceManagementScreen() {
     alert("Resource data exported successfully!");
   };
 
-  const ResourceForm = () => (
-    <div className="space-y-6">
+  const [payType, setPayType] = useState<'hourly' | 'salary' | 'contract'>('hourly');
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  const handleAddOrUpdateResource = () => {
+    console.log('[ResourceManagement] Starting resource save...');
+    const formElement = formRef.current;
+    if (!formElement) {
+      console.error('[ResourceManagement] Form element not found');
+      setShowAddDialog(false);
+      return;
+    }
+    const fd = new FormData(formElement);
+    // Debug: log raw form entries
+    const rawEntries: Record<string, any> = {};
+    fd.forEach((v, k) => { rawEntries[k] = v; });
+    console.log('[ResourceManagement] Raw FormData entries:', rawEntries);
+
+    // Prefer FormData first (captures browser autofill), then fall back to controlled state
+    const nameVal = (((fd.get('name') as string) || formData.name) || '').trim();
+    const emailVal = (((fd.get('email') as string) || formData.email) || '').trim();
+    const phoneVal = (((fd.get('phone') as string) || formData.phone) || '').trim();
+    const locationVal = (((fd.get('location') as string) || formData.location) || '').trim();
+    const joinDateVal = (((fd.get('joinDate') as string) || formData.joinDate) || '').trim();
+    const currentProjectVal = (((fd.get('currentProject') as string) || formData.currentProject) || '').trim();
+    const roleVal = formData.role || (fd.get('role') as string) || '';
+    const deptVal = formData.department || (fd.get('department') as string) || '';
+    const employeeIdVal = formData.employeeId || (fd.get('employeeId') as string) || '';
+    const skillsRaw = formData.skills || (fd.get('skills') as string) || '';
+    const skills = skillsRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+    // Basic validation
+    if (!roleVal || !deptVal) {
+      alert('Please select Role and Department.');
+      return;
+    }
+    if (!nameVal) {
+      alert('Please enter a Name.');
+      return;
+    }
+
+    const newData: Resource = {
+      id: selectedResource ? selectedResource.id : Date.now(),
+      name: nameVal,
+      role: roleVal,
+      department: deptVal,
+      employeeId: employeeIdVal,
+      email: emailVal,
+      phone: phoneVal,
+      location: locationVal,
+      skills,
+      currentProject: currentProjectVal || '',
+      joinDate: joinDateVal,
+      status: 'active',
+      performance: 80,
+      completedProjects: 0,
+      certifications: [],
+      payRate: parseFloat((fd.get('payRate') as string) || '0') || 0,
+      payType: ((fd.get('payType') as string) || 'hourly') as 'hourly' | 'salary' | 'contract',
+      weeklyHours: parseFloat((fd.get('weeklyHours') as string) || '40') || 40,
+      lastActive: new Date().toISOString().split('T')[0],
+      availability: 'available',
+      createdBy: ''
+    };
+
+    // Firestore write when enabled, else local state
+    if (firebaseEnabled && db) {
+      console.log('[ResourceManagement] Attempting Firestore write...');
+      if (selectedResource?.docId) {
+        updateDoc(doc(db, 'resources', selectedResource.docId), newData as any)
+          .then(() => console.log('[ResourceManagement] Firestore update success'))
+          .catch((e) => {
+          console.error('[ResourceManagement] Firestore update failed, applying local state', e);
+          setResources(prev => {
+            const next = prev.map(r => r.id === selectedResource.id ? newData : r);
+            try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
+            return next;
+          });
+        });
+      } else {
+        addDoc(collection(db, 'resources'), newData as any)
+          .then(() => console.log('[ResourceManagement] Firestore add success'))
+          .catch((e) => {
+          console.error('[ResourceManagement] Firestore add failed, applying local state', e);
+          setResources(prev => {
+            const next = [...prev, newData];
+            try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
+            return next;
+          });
+        });
+      }
+    } else {
+      console.warn('[ResourceManagement] Firebase disabled or db missing. Saving locally.');
+      if (selectedResource) {
+        setResources(prev => {
+          const next = prev.map(r => r.id === selectedResource.id ? newData : r);
+          try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
+          return next;
+        });
+      } else {
+        setResources(prev => {
+          const next = [...prev, newData];
+          try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
+          return next;
+        });
+      }
+    }
+    console.log('[ResourceManagement] Saved resource:', newData);
+    // Ensure filters don't hide the newly added resource
+    setFilterDepartment('all');
+    setSearchQuery('');
+    setShowAddDialog(false);
+    setSelectedResource(null);
+    alert('Resource saved successfully.');
+  };
+
+  const ResourceForm = React.memo(() => (
+    <form ref={formRef} data-form="resource-form" className="space-y-6">
       {/* Basic Information */}
       <div className="space-y-4">
         <h4>Basic Information</h4>
@@ -227,7 +521,12 @@ export function ResourceManagementScreen() {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Full Name</Label>
-            <Input placeholder="John Smith" defaultValue={selectedResource?.name} />
+            <Input 
+              name="name" 
+              placeholder="John Smith" 
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            />
           </div>
           <div className="space-y-2">
             <Label>Role</Label>
@@ -241,6 +540,8 @@ export function ResourceManagementScreen() {
                 setFormData(newFormData);
               }}
             >
+              {/* Hidden input to capture Select value in FormData */}
+              <input type="hidden" name="role" value={formData.role} />
               <SelectTrigger>
                 <SelectValue placeholder="Select role" />
               </SelectTrigger>
@@ -269,6 +570,8 @@ export function ResourceManagementScreen() {
               setFormData(newFormData);
             }}
           >
+            {/* Hidden input to capture Select value in FormData */}
+            <input type="hidden" name="department" value={formData.department} />
             <SelectTrigger>
               <SelectValue placeholder="Select department" />
             </SelectTrigger>
@@ -284,6 +587,7 @@ export function ResourceManagementScreen() {
         <div className="space-y-2">
           <Label>Employee ID</Label>
           <Input 
+            name="employeeId"
             value={formData.employeeId} 
             readOnly 
             placeholder="Auto-generated based on role and department"
@@ -294,36 +598,64 @@ export function ResourceManagementScreen() {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Email</Label>
-            <Input type="email" placeholder="john@xtechs.com" defaultValue={selectedResource?.email} />
+            <Input 
+              name="email" 
+              type="email" 
+              placeholder="john@xtechs.com" 
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            />
           </div>
           <div className="space-y-2">
             <Label>Phone</Label>
-            <Input placeholder="+61 412 345 678" defaultValue={selectedResource?.phone} />
+            <Input 
+              name="phone" 
+              placeholder="+61 412 345 678" 
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Location</Label>
-            <Input placeholder="Brisbane" defaultValue={selectedResource?.location} />
+            <Input 
+              name="location" 
+              placeholder="Brisbane" 
+              value={formData.location}
+              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+            />
           </div>
           <div className="space-y-2">
             <Label>Join Date</Label>
-            <Input type="date" defaultValue={selectedResource?.joinDate} />
+            <Input 
+              name="joinDate" 
+              type="date" 
+              value={formData.joinDate}
+              onChange={(e) => setFormData({ ...formData, joinDate: e.target.value })}
+            />
           </div>
         </div>
 
         <div className="space-y-2">
           <Label>Skills (comma-separated)</Label>
           <Input 
+            name="skills"
             placeholder="Solar Installation, Electrical Work, Safety Compliance" 
-            defaultValue={selectedResource?.skills.join(", ")}
+            value={formData.skills}
+            onChange={(e) => setFormData({ ...formData, skills: e.target.value })}
           />
         </div>
 
         <div className="space-y-2">
           <Label>Current Project (if any)</Label>
-          <Input placeholder="Project name" defaultValue={selectedResource?.currentProject} />
+          <Input 
+            name="currentProject" 
+            placeholder="Project name" 
+            value={formData.currentProject}
+            onChange={(e) => setFormData({ ...formData, currentProject: e.target.value })}
+          />
         </div>
       </div>
 
@@ -333,7 +665,9 @@ export function ResourceManagementScreen() {
         
         <div className="space-y-2">
           <Label>Pay Type</Label>
-          <Select defaultValue="hourly">
+          <Select value={payType} onValueChange={(v) => setPayType(v as any)}>
+            {/* Hidden input to capture Select value in FormData */}
+            <input type="hidden" name="payType" value={payType} />
             <SelectTrigger>
               <SelectValue placeholder="Select Pay Type" />
             </SelectTrigger>
@@ -341,14 +675,13 @@ export function ResourceManagementScreen() {
               <SelectItem value="hourly">Hourly</SelectItem>
               <SelectItem value="salary">Salary</SelectItem>
               <SelectItem value="contract">Contract</SelectItem>
-              <SelectItem value="commission">Commission</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <div className="space-y-2">
           <Label>Pay Rate (AUD)</Label>
-          <Input type="number" step="0.01" placeholder="e.g., 25.50" />
+          <Input name="payRate" type="number" step="0.01" placeholder="e.g., 25.50" />
         </div>
 
         <div className="space-y-2">
@@ -363,12 +696,12 @@ export function ResourceManagementScreen() {
         
         <div className="space-y-2">
           <Label>Training Days per Week (Optional)</Label>
-          <Input type="number" min="0" max="7" placeholder="e.g., 1" />
+          <Input name="trainingDays" type="number" min="0" max="7" placeholder="e.g., 1" />
         </div>
 
         <div className="space-y-2">
           <Label>Weekly Hours Default</Label>
-          <Input type="number" min="0" placeholder="40" defaultValue="40" />
+          <Input name="weeklyHours" type="number" min="0" placeholder="40" defaultValue="40" />
         </div>
       </div>
 
@@ -379,20 +712,21 @@ export function ResourceManagementScreen() {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Sick Leave Days</Label>
-            <Input type="number" min="0" placeholder="10" defaultValue="10" />
+            <Input name="sickLeaveDays" type="number" min="0" placeholder="10" defaultValue="10" />
           </div>
           <div className="space-y-2">
             <Label>Annual Leave Days</Label>
-            <Input type="number" min="0" placeholder="15" defaultValue="15" />
+            <Input name="annualLeaveDays" type="number" min="0" placeholder="15" defaultValue="15" />
           </div>
         </div>
       </div>
 
       <div className="flex gap-3 pt-4 border-t">
-        <Button className="flex-1" onClick={() => setShowAddDialog(false)}>
+        <Button type="button" className="flex-1" onClick={handleAddOrUpdateResource}>
           {selectedResource ? "Update Resource" : "Add Resource"}
         </Button>
         <Button 
+          type="button"
           variant="outline" 
           className="flex-1" 
           onClick={() => {
@@ -403,8 +737,8 @@ export function ResourceManagementScreen() {
           Cancel
         </Button>
       </div>
-    </div>
-  );
+    </form>
+  ));
 
   const stats = {
     total: resources.length,
@@ -423,6 +757,11 @@ export function ResourceManagementScreen() {
         <div>
           <h1 className="text-2xl font-bold">Resource Management</h1>
           <p className="text-gray-600">Manage team members and resource allocation</p>
+          <div className="mt-1 text-xs">
+            <span className={firebaseEnabled ? "text-green-600" : "text-red-600"}>
+              {firebaseEnabled ? `Firebase: ON (${import.meta.env.VITE_FIREBASE_PROJECT_ID || '-'})` : 'Firebase: OFF'}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" onClick={handleReportsClick}>
@@ -435,7 +774,18 @@ export function ResourceManagementScreen() {
           </Button>
           <Button onClick={() => {
             setSelectedResource(null);
-            setFormData({ role: "", department: "", employeeId: "" });
+            setFormData({
+              name: "",
+              email: "",
+              phone: "",
+              location: "",
+              joinDate: "",
+              skills: "",
+              currentProject: "",
+              role: "",
+              department: "",
+              employeeId: ""
+            });
             setShowAddDialog(true);
           }}>
             <UserPlus className="w-4 h-4 mr-2" />
@@ -476,35 +826,7 @@ export function ResourceManagementScreen() {
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={handlePerformanceClick}>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-600">Avg Performance</p>
-                <h3 className="text-2xl font-bold mt-2">{stats.averagePerformance}%</h3>
-                <p className="text-sm text-purple-600">Team efficiency</p>
-              </div>
-              <div className="p-3 bg-purple-100 rounded-full">
-                <TrendingUp className="w-6 h-6 text-purple-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={handleAvailabilityClick}>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-600">Available Now</p>
-                <h3 className="text-2xl font-bold mt-2">{stats.available}</h3>
-                <p className="text-sm text-orange-600">Ready for assignment</p>
-              </div>
-              <div className="p-3 bg-orange-100 rounded-full">
-                <CheckCircle2 className="w-6 h-6 text-orange-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Removed Avg Performance and Available Now cards per request */}
       </div>
 
       {/* Filters and Search */}
@@ -549,82 +871,73 @@ export function ResourceManagementScreen() {
         <TabsContent value="grid" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredResources.map((resource) => (
-              <Card key={resource.id}>
-                <CardHeader>
-                    <div className="flex items-center gap-3">
-                      <Avatar>
-                        <AvatarFallback>{resource.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h4>{resource.name}</h4>
-                        <p className="text-muted-foreground">{resource.role}</p>
-                        <p className="text-xs text-blue-600 font-mono">{resource.employeeId}</p>
+              <Card key={resource.id} className="overflow-hidden min-h-[420px]">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start gap-3">
+                    <Avatar className="w-12 h-12">
+                      <AvatarFallback>{resource.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="font-semibold truncate">{resource.name || 'No Name'}</h4>
+                      </div>
+                      <div className="text-muted-foreground truncate">{resource.role || 'No Role'}</div>
+                      <div className="text-xs text-blue-600 font-mono">
+                        <span className="text-gray-500">Employee ID: </span>
+                        {resource.employeeId || 'Not Generated'}
                       </div>
                     </div>
+                  </div>
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="space-y-2">
+                <CardContent className="space-y-4 pb-4">
+                  <div className="space-y-2 text-sm">
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Briefcase className="w-4 h-4" />
-                      <span>{resource.department}</span>
+                      <span className="truncate">{resource.department || 'No Department'}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Mail className="w-4 h-4" />
-                      <span>{resource.email}</span>
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-foreground" />
+                      <span className="break-words">{resource.email || 'No Email'}</span>
                     </div>
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Phone className="w-4 h-4" />
-                      <span>{resource.phone}</span>
+                      <span className="truncate">{resource.phone || 'No Phone'}</span>
                     </div>
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <MapPin className="w-4 h-4" />
-                      <span>{resource.location}</span>
+                      <span className="truncate">{resource.location || 'No Location'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Calendar className="w-4 h-4" />
+                      <span className="truncate">Joined: {resource.joinDate || 'Not Set'}</span>
                     </div>
                   </div>
 
                   {resource.currentProject && (
                     <div className="p-2 bg-primary/10 rounded-lg">
-                      <p className="text-muted-foreground">Current Project</p>
-                      <p>{resource.currentProject}</p>
+                      <p className="text-xs text-muted-foreground">Current Project</p>
+                      <p className="text-sm font-medium truncate">{resource.currentProject}</p>
                     </div>
                   )}
 
                   <div>
-                    <p className="text-muted-foreground mb-2">Skills</p>
+                    <p className="text-xs text-muted-foreground mb-2">Skills</p>
                     <div className="flex flex-wrap gap-1">
-                      {resource.skills.map((skill, idx) => (
-                        <Badge key={idx} variant="outline">
-                          {skill}
-                        </Badge>
-                      ))}
+                      {resource.skills.length === 0 ? (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      ) : (
+                        resource.skills.map((skill, idx) => (
+                          <Badge key={idx} variant="outline" className="text-xs">
+                            {skill}
+                          </Badge>
+                        ))
+                      )}
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Performance</span>
-                      <div className="flex items-center gap-2">
-                        <Progress value={resource.performance} className="w-16 h-2" />
-                        <span className="text-sm font-medium">{resource.performance}%</span>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Status</span>
-                      <Badge variant={resource.status === 'active' ? 'default' : resource.status === 'on-leave' ? 'secondary' : 'outline'}>
-                        {resource.status}
-                      </Badge>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Availability</span>
-                      <Badge variant={resource.availability === 'available' ? 'default' : resource.availability === 'busy' ? 'secondary' : 'destructive'}>
-                        {resource.availability}
-                      </Badge>
-                    </div>
-                  </div>
+                  {/* Metrics removed per request: Performance, Status, Availability */}
 
-                  <div className="flex gap-2 pt-2">
+                  <div className="flex gap-2 pt-1">
                     <Button 
                       variant="outline" 
                       size="sm" 
@@ -647,10 +960,19 @@ export function ResourceManagementScreen() {
                       variant="outline" 
                       size="sm" 
                       className="flex-1"
-                      onClick={() => handleDeactivate(resource.id)}
+                      onClick={() => handleToggleActive(resource.id)}
                     >
                       <UserX className="w-4 h-4 mr-1" />
-                      Deactivate
+                      {resource.status === 'inactive' ? 'Activate' : 'Deactivate'}
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => handleDelete(resource.id)}
+                    >
+                      <X className="w-4 h-4 mr-1" />
+                      Delete
                     </Button>
                   </div>
                 </CardContent>
@@ -717,9 +1039,16 @@ export function ResourceManagementScreen() {
                           <Button 
                             variant="ghost" 
                             size="sm"
-                            onClick={() => handleDeactivate(resource.id)}
+                            onClick={() => handleToggleActive(resource.id)}
                           >
                             <UserX className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handleDelete(resource.id)}
+                          >
+                            <X className="w-4 h-4" />
                           </Button>
                         </div>
                       </TableCell>
@@ -758,7 +1087,7 @@ export function ResourceManagementScreen() {
           </DialogHeader>
           {viewingResource && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6">
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-lg">Basic Information</CardTitle>
@@ -769,76 +1098,41 @@ export function ResourceManagementScreen() {
                         <AvatarFallback>{viewingResource.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                       </Avatar>
                       <div>
-                        <h3 className="font-semibold">{viewingResource.name}</h3>
-                        <p className="text-gray-600">{viewingResource.role}</p>
+                        <h3 className="font-semibold">{viewingResource.name || '-'}</h3>
+                        <p className="text-gray-600">{viewingResource.role || '-'}</p>
                       </div>
                     </div>
                     <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600 w-32">Name</span>
+                        <span className="font-medium">{viewingResource.name || '-'}</span>
+                      </div>
                       <div className="flex items-center gap-2">
                         <Briefcase className="w-4 h-4 text-gray-500" />
                         <span>{viewingResource.department}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Mail className="w-4 h-4 text-gray-500" />
-                        <span>{viewingResource.email}</span>
+                        <span>{viewingResource.email || '-'}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Phone className="w-4 h-4 text-gray-500" />
-                        <span>{viewingResource.phone}</span>
+                        <span>{viewingResource.phone || '-'}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <MapPin className="w-4 h-4 text-gray-500" />
-                        <span>{viewingResource.location}</span>
+                        <span>{viewingResource.location || '-'}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-gray-500" />
-                        <span>Joined: {viewingResource.joinDate}</span>
+                        <span>Joined: {viewingResource.joinDate || '-'}</span>
                       </div>
                       <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600">Employee ID</span>
                         <Badge variant="outline" className="font-mono text-blue-600">
                           {viewingResource.employeeId}
                         </Badge>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Performance & Status</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span>Performance Score</span>
-                        <span className="font-semibold">{viewingResource.performance}%</span>
-                      </div>
-                      <Progress value={viewingResource.performance} className="h-2" />
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-600">Status</p>
-                        <Badge variant={viewingResource.status === 'active' ? 'default' : 'secondary'}>
-                          {viewingResource.status}
-                        </Badge>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Availability</p>
-                        <Badge variant={viewingResource.availability === 'available' ? 'default' : 'destructive'}>
-                          {viewingResource.availability}
-                        </Badge>
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-sm text-gray-600">Completed Projects</p>
-                      <p className="text-2xl font-bold text-blue-600">{viewingResource.completedProjects}</p>
-                    </div>
-
-                    <div>
-                      <p className="text-sm text-gray-600">Last Active</p>
-                      <p className="font-medium">{viewingResource.lastActive}</p>
                     </div>
                   </CardContent>
                 </Card>

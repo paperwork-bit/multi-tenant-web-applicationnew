@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Button } from "./components/ui/button";
 import { Moon, Sun, Home, Users, Clipboard, FileText, Wrench, Calendar, FileCheck, Mail, Smartphone, Search, DollarSign, Menu, Upload, CheckSquare, Wallet, Clock } from "lucide-react";
 import companyLogo from "figma:asset/283027b090530df720ee88d43a780fd9aee6b0ad.png";
-import { checkFirebaseConnection } from "./lib/firebase";
+// Firebase removed
 
 // Import all screens
 import { AuthScreen, RetailerTeam } from "./components/screens/AuthScreen";
@@ -47,28 +47,11 @@ function App() {
   const [userEmail, setUserEmail] = useState<string>("");
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [firebaseConnected, setFirebaseConnected] = useState(false);
+  // Firebase removed
 
-  // Initialize Firebase on app start
-  useEffect(() => {
-    const initializeFirebase = () => {
-      try {
-        const isConnected = checkFirebaseConnection();
-        setFirebaseConnected(isConnected);
-        
-        if (isConnected) {
-          console.log('✅ Firebase connected successfully');
-        } else {
-          console.log('❌ Firebase connection failed');
-        }
-      } catch (error) {
-        console.error('Firebase initialization error:', error);
-        setFirebaseConnected(false);
-      }
-    };
+  // Firebase removed
 
-    initializeFirebase();
-  }, []);
+  // (Rolled back) no Firebase auth persistence
 
 
   const toggleDarkMode = () => {
@@ -78,9 +61,52 @@ function App() {
 
   const handleLogin = (role: UserRole, team?: RetailerTeam, email?: string) => {
     console.log("Login attempt:", { role, team, email });
-    setUserRole(role);
-    if (role === "retailer" && team) {
-      setRetailerTeam(team);
+    // Grant project management module access for specific user
+    if (email && email.toLowerCase() === "neil@xtechsrenewables.com.au") {
+      // Enforce Project Management-only for Neil
+      if (role !== "retailer" || team !== "project-management") {
+        alert("Access denied: This account is restricted to Project Management team. Please select Project Management to continue.");
+        return;
+      }
+      setUserRole("retailer");
+      setRetailerTeam("project-management");
+    } else if (email && email.toLowerCase() === "james@xtechsrenewables.com.au") {
+      // Enforce Sales-only access for James
+      if (role !== "retailer" || team !== "sales") {
+        alert("Access denied: This account is restricted to Sales team. Please select Sales Team to continue.");
+        return;
+      }
+      setUserRole("retailer");
+      setRetailerTeam("sales");
+    } else if (email && email.toLowerCase() === "paperwork@xtechsrenewables.com.au") {
+      // Enforce Operations-only access for Paperwork
+      if (role !== "retailer" || team !== "operations") {
+        alert("Access denied: This account is restricted to Operations team. Please select Operations to continue.");
+        return;
+      }
+      setUserRole("retailer");
+      setRetailerTeam("operations");
+    } else if (email && email.toLowerCase() === "ashely@xtechsrenewables.com.au") {
+      // Enforce On-Field only for Ashely
+      if (role !== "retailer" || team !== "on-field") {
+        alert("Access denied: This account is restricted to On-Field team. Please select On-Field to continue.");
+        return;
+      }
+      setUserRole("retailer");
+      setRetailerTeam("on-field");
+    } else if (email && email.toLowerCase() === "liam@xtechsrenewables.com.au") {
+      // Enforce On-Field only for Liam
+      if (role !== "retailer" || team !== "on-field") {
+        alert("Access denied: This account is restricted to On-Field team. Please select On-Field to continue.");
+        return;
+      }
+      setUserRole("retailer");
+      setRetailerTeam("on-field");
+    } else {
+      setUserRole(role);
+      if (role === "retailer" && team) {
+        setRetailerTeam(team);
+      }
     }
     if (email) {
       setUserEmail(email);
@@ -95,6 +121,8 @@ function App() {
     setUserEmail("");
     setCurrentScreen("auth");
   };
+
+  // (Rolled back) no idle auto-logout
 
   // Navigation items based on user role and team
   const getNavItems = () => {
@@ -136,6 +164,22 @@ function App() {
   };
 
   const navItems = getNavItems();
+  // Restrict Paperwork account to operations-only modules in UI
+  const isPaperwork = userEmail?.toLowerCase() === "paperwork@xtechsrenewables.com.au";
+  const operationsOnlyIds: Screen[] = [
+    "dashboard",
+    "project-management",
+    "site-visit",
+    "resources",
+    "approvals",
+    "payroll",
+    "billing",
+    "inspection",
+    "attendance",
+  ];
+  const filteredNavItems = isPaperwork
+    ? navItems.filter((item: any) => operationsOnlyIds.includes(item.id))
+    : navItems;
 
   const renderScreen = () => {
     switch (currentScreen) {
@@ -207,13 +251,7 @@ function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Firebase Connection Status */}
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${firebaseConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-              <span className="text-sm text-muted-foreground">
-                Firebase {firebaseConnected ? 'Connected' : 'Disconnected'}
-              </span>
-            </div>
+            {/* Firebase removed */}
             
             {userRole && (
               <div className="flex items-center gap-2">
@@ -248,7 +286,7 @@ function App() {
               <h2>xTechs Renewables</h2>
             </div>
             <nav className="p-4 space-y-2">
-              {navItems.map((item) => {
+              {filteredNavItems.map((item) => {
                 const Icon = item.icon;
                 return (
                   <Button

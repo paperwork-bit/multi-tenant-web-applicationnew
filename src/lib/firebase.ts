@@ -1,41 +1,45 @@
-// Firebase configuration and initialization
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
 
-// Firebase configuration
-// Replace these with your actual Firebase config values from Firebase Console
+// Read config from env. Keep optional to allow local-only mode if missing
 const firebaseConfig = {
-  apiKey: "your-api-key-here",
-  authDomain: "your-project-id.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project-id.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef123456789"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+function hasAllConfig(): boolean {
+  return Boolean(
+    firebaseConfig.apiKey &&
+    firebaseConfig.authDomain &&
+    firebaseConfig.projectId &&
+    firebaseConfig.appId
+  );
+}
 
-// Initialize Firebase services
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const storage = getStorage(app);
+export const app = hasAllConfig()
+  ? (getApps()[0] ?? initializeApp(firebaseConfig))
+  : undefined;
 
-// Export the app instance
-export default app;
+export const auth = app ? getAuth(app) : undefined as unknown as ReturnType<typeof getAuth>;
+export const db = app ? getFirestore(app) : undefined as unknown as ReturnType<typeof getFirestore>;
 
-// Connection status check
-export const checkFirebaseConnection = () => {
-  try {
-    console.log('Firebase initialized successfully');
-    console.log('Auth instance:', auth);
-    console.log('Firestore instance:', db);
-    console.log('Storage instance:', storage);
-    return true;
-  } catch (error) {
-    console.error('Firebase initialization error:', error);
-    return false;
-  }
-};
+export const firebaseEnabled = Boolean(app);
+if (firebaseEnabled) {
+  // Minimal safe log to verify env is wired
+  // eslint-disable-next-line no-console
+  console.log('[Firebase] Enabled with project:', firebaseConfig.projectId);
+} else {
+  // eslint-disable-next-line no-console
+  console.warn('[Firebase] Disabled. Missing config:', {
+    hasApiKey: Boolean(firebaseConfig.apiKey),
+    hasAuthDomain: Boolean(firebaseConfig.authDomain),
+    hasProjectId: Boolean(firebaseConfig.projectId),
+    hasAppId: Boolean(firebaseConfig.appId),
+  });
+}
+

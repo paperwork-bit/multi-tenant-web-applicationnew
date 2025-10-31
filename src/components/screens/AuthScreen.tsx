@@ -74,6 +74,39 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
               </TabsList>
 
               <TabsContent value="signin" className="space-y-4">
+                <form
+                  autoComplete="off"
+                  onSubmit={(e)=>{
+                    e.preventDefault();
+                    const em = (email || "").toLowerCase().trim();
+                    if (userType === 'retailer') {
+                      if (em === 'neil@xtechsrenewables.com.au' && retailerTeam !== 'project-management') {
+                        alert('Access denied: This account is restricted to Project Management team. Please select Project Management to continue.');
+                        return;
+                      }
+                      if (em === 'james@xtechsrenewables.com.au' && retailerTeam !== 'sales') {
+                        alert('Access denied: This account is restricted to Sales team. Please select Sales Team to continue.');
+                        return;
+                      }
+                      if (em === 'paperwork@xtechsrenewables.com.au' && retailerTeam !== 'operations') {
+                        alert('Access denied: This account is restricted to Operations team. Please select Operations to continue.');
+                        return;
+                      }
+                      if (em === 'ashely@xtechsrenewables.com.au' && retailerTeam !== 'on-field') {
+                        alert('Access denied: This account is restricted to On-Field team. Please select On-Field to continue.');
+                        return;
+                      }
+                      if (em === 'liam@xtechsrenewables.com.au' && retailerTeam !== 'on-field') {
+                        alert('Access denied: This account is restricted to On-Field team. Please select On-Field to continue.');
+                        return;
+                      }
+                    }
+                    onLogin?.(userType, userType === "retailer" ? retailerTeam : undefined, email);
+                  }}
+                >
+                  {/* Hidden trap inputs to prevent browser autofill */}
+                  <input type="text" style={{display:'none'}} autoComplete="username" />
+                  <input type="password" style={{display:'none'}} autoComplete="current-password" />
 
                 {userType === "retailer" && (
                   <div className="space-y-2">
@@ -101,6 +134,8 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
                       type="email" 
                       placeholder="you@company.com" 
                       className="pl-10"
+                      autoComplete="off"
+                      name="login-email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                     />
@@ -115,6 +150,8 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
                       type="password" 
                       placeholder="••••••••" 
                       className="pl-10"
+                      autoComplete="new-password"
+                      name="login-password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                     />
@@ -129,7 +166,8 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
                     Forgot password?
                   </Button>
                 </div>
-                <Button className="w-full" onClick={() => onLogin?.(userType, userType === "retailer" ? retailerTeam : undefined, email)}>Sign In</Button>
+                <Button className="w-full" type="submit">Sign In</Button>
+                </form>
               </TabsContent>
 
               <TabsContent value="signup" className="space-y-4">
@@ -143,11 +181,11 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-email">Email</Label>
-                  <Input id="signup-email" type="email" placeholder="you@company.com" />
+                  <Input id="signup-email" type="email" placeholder="you@company.com" autoComplete="email" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-password">Password</Label>
-                  <Input id="signup-password" type="password" placeholder="••••••••" />
+                  <Input id="signup-password" type="password" placeholder="••••••••" autoComplete="new-password" />
                 </div>
                 <Button className="w-full">Create Account</Button>
               </TabsContent>
