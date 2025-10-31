@@ -151,6 +151,30 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
     description: "",
   });
 
+  // Resources for assignee dropdowns (loaded from Resource Management persistence)
+  const [resourceNames, setResourceNames] = useState<string[]>([]);
+
+  useEffect(() => {
+    const loadResources = () => {
+      try {
+        const raw = localStorage.getItem('xtr_resources');
+        const list = raw ? JSON.parse(raw) : [];
+        const names = (Array.isArray(list) ? list : [])
+          .filter((r: any) => r && typeof r.name === 'string' && r.name.trim().length > 0)
+          .map((r: any) => r.name.trim());
+        setResourceNames(names);
+      } catch {
+        setResourceNames([]);
+      }
+    };
+    loadResources();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'xtr_resources') loadResources();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   // Update commentEmail when userEmail prop changes
   useEffect(() => {
     console.log("LeadsCRMScreen userEmail prop:", userEmail);
@@ -1023,19 +1047,71 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
                 <div className="space-y-3">
                   <div>
                     <Label>Sales Representative</Label>
-                    <Input value={projectForm.salesRep} onChange={(e) => setProjectForm({ ...projectForm, salesRep: e.target.value })} placeholder="e.g., John Smith" />
+                    <Select value={projectForm.salesRep} onValueChange={(v) => setProjectForm({ ...projectForm, salesRep: v })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={resourceNames.length ? "Select Sales Rep" : "No resources found"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {resourceNames.length === 0 ? (
+                          <SelectItem value="">No resources</SelectItem>
+                        ) : (
+                          resourceNames.map((name) => (
+                            <SelectItem key={name} value={name}>{name}</SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     <Label>Project Manager</Label>
-                    <Input value={projectForm.projectManager} onChange={(e) => setProjectForm({ ...projectForm, projectManager: e.target.value })} placeholder="e.g., Sarah Wilson" />
+                    <Select value={projectForm.projectManager} onValueChange={(v) => setProjectForm({ ...projectForm, projectManager: v })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={resourceNames.length ? "Select Project Manager" : "No resources found"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {resourceNames.length === 0 ? (
+                          <SelectItem value="">No resources</SelectItem>
+                        ) : (
+                          resourceNames.map((name) => (
+                            <SelectItem key={name} value={name}>{name}</SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     <Label>Lead Installer</Label>
-                    <Input value={projectForm.leadInstaller} onChange={(e) => setProjectForm({ ...projectForm, leadInstaller: e.target.value })} placeholder="e.g., Mike Johnson" />
+                    <Select value={projectForm.leadInstaller} onValueChange={(v) => setProjectForm({ ...projectForm, leadInstaller: v })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={resourceNames.length ? "Select Lead Installer" : "No resources found"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {resourceNames.length === 0 ? (
+                          <SelectItem value="">No resources</SelectItem>
+                        ) : (
+                          resourceNames.map((name) => (
+                            <SelectItem key={name} value={name}>{name}</SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     <Label>Electrician</Label>
-                    <Input value={projectForm.electrician} onChange={(e) => setProjectForm({ ...projectForm, electrician: e.target.value })} placeholder="e.g., Tony Martinez" />
+                    <Select value={projectForm.electrician} onValueChange={(v) => setProjectForm({ ...projectForm, electrician: v })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={resourceNames.length ? "Select Electrician" : "No resources found"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {resourceNames.length === 0 ? (
+                          <SelectItem value="">No resources</SelectItem>
+                        ) : (
+                          resourceNames.map((name) => (
+                            <SelectItem key={name} value={name}>{name}</SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </div>
