@@ -9,10 +9,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "../ui/command";
 import { Checkbox } from "../ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Badge } from "../ui/badge";
-import { Plus, Search, Filter, Mail, X, MessageSquare, Calendar, User, Phone, MapPin, Clock, DollarSign, Zap, Home, Building, Car, Battery, Sun, Wind, Droplets, Thermometer, Lightbulb, Wifi, Shield, CheckCircle, AlertCircle, Star, Eye, Edit, Trash2, Download, Upload, Send, Copy, ExternalLink, ArrowRight, ArrowLeft, ChevronDown, ChevronUp, PlusCircle, MinusCircle, Settings, MoreHorizontal, MoreVertical, Menu, Grid, List, Filter as FilterIcon, SortAsc, SortDesc, RefreshCw, Save, FileText, Image, Video, Music, File, Folder, FolderOpen, Archive, Trash, Share, Lock, Unlock, Key, UserCheck, UserX, Users, UserPlus, UserMinus, Heart, HeartOff, ThumbsUp, ThumbsDown, Flag, Bookmark, BookmarkCheck, Tag, Tags, Hash, AtSign, Hash as HashIcon, Percent, Plus as PlusIcon, Minus, Divide, X as XIcon, Equal, NotEqual, GreaterThan, LessThan, GreaterThanOrEqual, LessThanOrEqual, Infinity, Pi, Sigma, Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Eta, Theta, Iota, Kappa, Lambda, Mu, Nu, Xi, Omicron, Rho, Tau, Upsilon, Phi, Chi, Psi, Omega } from "lucide-react";
+import { Plus, Search, Filter, Mail, X, MessageSquare, Calendar, User, Phone, MapPin, Clock, DollarSign, Zap, Home, Building, Car, Battery, Sun, Wind, Droplets, Thermometer, Lightbulb, Wifi, Shield, CheckCircle, AlertCircle, Star, Eye, Edit, Trash2, Download, Upload, Send, Copy, ExternalLink, ArrowRight, ArrowLeft, ChevronDown, ChevronUp, PlusCircle, MinusCircle, Settings, MoreHorizontal, MoreVertical, Menu, Grid, List, Filter as FilterIcon, SortAsc, SortDesc, RefreshCw, Save, FileText, Image, Video, Music, File, Folder, FolderOpen, Archive, Trash, Share, Lock, Unlock, Key, UserCheck, UserX, Users, UserPlus, UserMinus, Heart, HeartOff, ThumbsUp, ThumbsDown, Flag, Bookmark, BookmarkCheck, Tag, Tags, Hash, AtSign, Hash as HashIcon, Percent, Plus as PlusIcon, Minus, Divide, X as XIcon, Equal, NotEqual, GreaterThan, LessThan, GreaterThanOrEqual, LessThanOrEqual, Infinity, Pi, Sigma, Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Eta, Theta, Iota, Kappa, Lambda, Mu, Nu, Xi, Omicron, Rho, Tau, Upsilon, Phi, Chi, Psi, Omega, Check } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 
 interface LeadsCRMScreenProps {
@@ -84,14 +86,140 @@ interface Lead {
       inspectionDate?: string;
     };
     teamAssignment?: {
-      projectManager?: string;
-      salesRep?: string;
-      installer?: string;
-      electrician?: string;
+      projectManager?: string | string[];
+      salesRep?: string | string[];
+      leadElectrician?: string | string[];
+      apprentice?: string | string[];
     };
     projectNotes?: string;
   };
 }
+
+interface ProjectFormState {
+  title: string;
+  status: string;
+  systemType: string;
+  price: string;
+  projectId: string;
+  startDate: string;
+  notes: string;
+  clientType: string;
+  customerName: string;
+  customerEmail: string;
+  customerContact: string;
+  customerAddress: string;
+  location: string;
+  houseStorey: string;
+  houseStoreyOther: string;
+  roofType: string;
+  accessSecondStorey: string;
+  accessInverter: string;
+  monitoring: string;
+  monitoringAmount: string;
+  stcPortal: string;
+  salesRep: string[];
+  projectManager: string[];
+  leadElectrician: string[];
+  apprentice: string[];
+  preApprovalNumber: string;
+  distributor: string;
+  meterNumber: string;
+}
+
+const createInitialProjectForm = (): ProjectFormState => ({
+  title: "",
+  status: "new",
+  systemType: "pv-only",
+  price: "",
+  projectId: "",
+  startDate: "",
+  notes: "",
+  clientType: "",
+  customerName: "",
+  customerEmail: "",
+  customerContact: "",
+  customerAddress: "",
+  location: "",
+  houseStorey: "",
+  houseStoreyOther: "",
+  roofType: "",
+  accessSecondStorey: "",
+  accessInverter: "",
+  monitoring: "",
+  monitoringAmount: "",
+  stcPortal: "",
+  salesRep: [],
+  projectManager: [],
+  leadElectrician: [],
+  apprentice: [],
+  preApprovalNumber: "",
+  distributor: "",
+  meterNumber: "",
+});
+
+interface ResourceMultiSelectProps {
+  label: string;
+  value: string[];
+  onChange: (next: string[]) => void;
+  placeholder: string;
+  options: string[];
+}
+
+const ResourceMultiSelect: React.FC<ResourceMultiSelectProps> = ({ label, value, onChange, placeholder, options }) => {
+  const [open, setOpen] = useState(false);
+
+  const toggleOption = (option: string) => {
+    if (value.includes(option)) {
+      onChange(value.filter((n) => n !== option));
+    } else {
+      onChange([...value, option]);
+    }
+  };
+
+  const displayText = value.length ? value.join(", ") : placeholder;
+
+  return (
+    <div>
+      <Label>{label}</Label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            className="w-full justify-between"
+            disabled={options.length === 0}
+          >
+            <span className={displayText ? "truncate" : "text-muted-foreground"}>{displayText || placeholder}</span>
+            <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-56 p-0">
+          <Command>
+            <CommandInput placeholder={`Search ${label.toLowerCase()}...`} />
+            <CommandList>
+              <CommandEmpty>No resources found.</CommandEmpty>
+              <CommandGroup>
+                {options.map((option) => {
+                  const selected = value.includes(option);
+                  return (
+                    <CommandItem
+                      key={option}
+                      value={option}
+                      onSelect={() => toggleOption(option)}
+                    >
+                      <Check className={`mr-2 h-4 w-4 ${selected ? "opacity-100" : "opacity-0"}`} />
+                      {option}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+};
 
 export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
   const [view, setView] = useState<"kanban" | "list">("kanban");
@@ -111,38 +239,7 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
   const [showNewLead, setShowNewLead] = useState(false);
   // Create Project dialog state
   const [showProjectForm, setShowProjectForm] = useState(false);
-  const [projectForm, setProjectForm] = useState({
-    title: "",
-    status: "new",
-    systemType: "pv-only",
-    price: "",
-    projectId: "",
-    startDate: "",
-    notes: "",
-    clientType: "residential",
-    customerName: "",
-    customerEmail: "",
-    customerContact: "",
-    customerAddress: "",
-    location: "",
-    houseStorey: "",
-    houseStoreyOther: "",
-    roofType: "",
-    accessSecondStorey: "",
-    accessInverter: "",
-    monitoring: "",
-    monitoringAmount: "",
-    stcPortal: "",
-    // Team assignment
-    salesRep: "",
-    projectManager: "",
-    leadInstaller: "",
-    electrician: "",
-    // Utility info
-    preApprovalNumber: "",
-    distributor: "",
-    meterNumber: "",
-  });
+  const [projectForm, setProjectForm] = useState<ProjectFormState>(() => createInitialProjectForm());
   const [newLeadForm, setNewLeadForm] = useState({
     customerName: "",
     email: "",
@@ -260,15 +357,15 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
   const handleCreateProject = () => {
     if (!selectedLead) return;
     const autoId = `PRJ-${Date.now().toString().slice(-6)}`;
+    const base = createInitialProjectForm();
     setProjectForm({
+      ...base,
       title: selectedLead.title,
       status: 'new',
       systemType: 'pv-only',
-      price: '',
       projectId: autoId,
       startDate: new Date().toISOString().split('T')[0],
       notes: selectedLead.description || '',
-      clientType: '',
       customerName: selectedLead.title,
       customerEmail: (selectedLead.tags && selectedLead.tags[0]) || '',
       customerContact: selectedLead.value || '',
@@ -310,10 +407,10 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
         stcPortal: projectForm.stcPortal || null,
       },
       teamAssignment: {
-        salesRep: projectForm.salesRep || null,
-        projectManager: projectForm.projectManager || null,
-        leadInstaller: projectForm.leadInstaller || null,
-        electrician: projectForm.electrician || null,
+        salesRep: projectForm.salesRep,
+        projectManager: projectForm.projectManager,
+        leadElectrician: projectForm.leadElectrician,
+        apprentice: projectForm.apprentice,
       },
       utilityInfo: {
         preApprovalNumber: projectForm.preApprovalNumber || null,
@@ -1045,74 +1142,34 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
               <div className="p-3 border rounded-lg">
                 <p className="font-medium mb-2">Team Assignment</p>
                 <div className="space-y-3">
-                  <div>
-                    <Label>Sales Representative</Label>
-                    <Select value={projectForm.salesRep} onValueChange={(v) => setProjectForm({ ...projectForm, salesRep: v })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={resourceNames.length ? "Select Sales Rep" : "No resources found"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {resourceNames.length === 0 ? (
-                          <SelectItem value="">No resources</SelectItem>
-                        ) : (
-                          resourceNames.map((name) => (
-                            <SelectItem key={name} value={name}>{name}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Project Manager</Label>
-                    <Select value={projectForm.projectManager} onValueChange={(v) => setProjectForm({ ...projectForm, projectManager: v })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={resourceNames.length ? "Select Project Manager" : "No resources found"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {resourceNames.length === 0 ? (
-                          <SelectItem value="">No resources</SelectItem>
-                        ) : (
-                          resourceNames.map((name) => (
-                            <SelectItem key={name} value={name}>{name}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Lead Installer</Label>
-                    <Select value={projectForm.leadInstaller} onValueChange={(v) => setProjectForm({ ...projectForm, leadInstaller: v })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={resourceNames.length ? "Select Lead Installer" : "No resources found"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {resourceNames.length === 0 ? (
-                          <SelectItem value="">No resources</SelectItem>
-                        ) : (
-                          resourceNames.map((name) => (
-                            <SelectItem key={name} value={name}>{name}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Electrician</Label>
-                    <Select value={projectForm.electrician} onValueChange={(v) => setProjectForm({ ...projectForm, electrician: v })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={resourceNames.length ? "Select Electrician" : "No resources found"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {resourceNames.length === 0 ? (
-                          <SelectItem value="">No resources</SelectItem>
-                        ) : (
-                          resourceNames.map((name) => (
-                            <SelectItem key={name} value={name}>{name}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <ResourceMultiSelect
+                    label="Sales Representative"
+                    value={projectForm.salesRep}
+                    onChange={(next) => setProjectForm({ ...projectForm, salesRep: next })}
+                    placeholder={resourceNames.length ? "Select Sales Rep" : "No resources found"}
+                    options={resourceNames}
+                  />
+                  <ResourceMultiSelect
+                    label="Project Manager"
+                    value={projectForm.projectManager}
+                    onChange={(next) => setProjectForm({ ...projectForm, projectManager: next })}
+                    placeholder={resourceNames.length ? "Select Project Manager" : "No resources found"}
+                    options={resourceNames}
+                  />
+                  <ResourceMultiSelect
+                    label="Lead Electrician"
+                    value={projectForm.leadElectrician}
+                    onChange={(next) => setProjectForm({ ...projectForm, leadElectrician: next })}
+                    placeholder={resourceNames.length ? "Select Lead Electrician" : "No resources found"}
+                    options={resourceNames}
+                  />
+                  <ResourceMultiSelect
+                    label="Apprentice"
+                    value={projectForm.apprentice}
+                    onChange={(next) => setProjectForm({ ...projectForm, apprentice: next })}
+                    placeholder={resourceNames.length ? "Select Apprentice" : "No resources found"}
+                    options={resourceNames}
+                  />
                 </div>
               </div>
               <div className="p-3 border rounded-lg">
