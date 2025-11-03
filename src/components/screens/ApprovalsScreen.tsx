@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -33,6 +33,7 @@ interface LeaveRequest {
   reason: string;
   appliedOn: string;
   status: "pending" | "approved" | "rejected";
+  reviewerComment?: string;
 }
 
 interface DiscountRequest {
@@ -83,7 +84,7 @@ export function ApprovalsScreen() {
   const [maxDiscount, setMaxDiscount] = useState("");
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
-  
+
   // New dialog states
   const [showStatsDialog, setShowStatsDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
@@ -92,12 +93,120 @@ export function ApprovalsScreen() {
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [selectedItemType, setSelectedItemType] = useState<string>("");
 
-  // Sample data
-  const leaveRequests: LeaveRequest[] = [];
+  // Leave approvals persisted locally
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const discountRequests: DiscountRequest[] = [];
   const jobSubmissions: JobSubmission[] = [];
 
   const reimbursements: Reimbursement[] = [];
+
+  // Attendance edit approvals (from AttendanceScreen)
+  interface AttendanceApproval {
+    id: number;
+    userKey: string;
+    userEmail: string;
+    recordId: number;
+    date: string;
+    proposedCheckIn: string | null;
+    proposedCheckOut: string | null;
+    proposedDuration: string | null;
+    reason?: string;
+    status: "pending" | "approved" | "rejected";
+    submittedAt: string;
+    reviewerComment?: string;
+  }
+  const [attendanceApprovals, setAttendanceApprovals] = useState<AttendanceApproval[]>([]);
+  const [commentDialogOpen, setCommentDialogOpen] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [commentAction, setCommentAction] = useState<"approve" | "reject">("approve");
+  const [commentRequestId, setCommentRequestId] = useState<number | null>(null);
+
+  const loadApprovals = () => {
+    try {
+      const raw = localStorage.getItem("xtr_attendance_approvals");
+      setAttendanceApprovals(raw ? JSON.parse(raw) : []);
+    } catch {
+      setAttendanceApprovals([]);
+    }
+    try {
+      const rawLeaves = localStorage.getItem('xtr_leave_approvals');
+      const parsed = rawLeaves ? JSON.parse(rawLeaves) : [];
+      const mapDept = (email: string, fallback: string) => {
+        const em = String(email || '').toLowerCase();
+        if (em === 'ashely@xtechsrenewables.com.au') return 'On-Field';
+        if (em === 'liam@xtechsrenewables.com.au') return 'On-Field';
+        if (em === 'james@xtechsrenewables.com.au') return 'Sales';
+        if (em === 'neil@xtechsrenewables.com.au') return 'Project Management';
+        if (em === 'paperwork@xtechsrenewables.com.au') return 'Operations';
+        return fallback || 'General';
+      };
+      const normalized = parsed.map((l: any) => ({
+        ...l,
+        department: mapDept(l.employeeName, l.department),
+      }));
+      setLeaveRequests(normalized);
+    } catch {
+      setLeaveRequests([]);
+    }
+  };
+
+  useEffect(() => {
+    loadApprovals();
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key || e.key === "xtr_attendance_approvals") loadApprovals();
+    };
+    const onCustom = () => loadApprovals();
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('xtr-approvals-updated', onCustom as EventListener);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('xtr-approvals-updated', onCustom as EventListener);
+    };
+  }, []);
+
+  const persistApprovals = (next: AttendanceApproval[]) => {
+    setAttendanceApprovals(next);
+    try { localStorage.setItem("xtr_attendance_approvals", JSON.stringify(next)); } catch {}
+  };
+
+  const resolveAttendanceApproval = (requestId: number, approve: boolean, reviewerComment?: string) => {
+    const next = attendanceApprovals.map(a => a.id === requestId ? { ...a, status: approve ? "approved" : "rejected", reviewerComment } : a);
+    persistApprovals(next);
+
+    // Update the user's attendance record accordingly
+    const req = next.find(a => a.id === requestId);
+    if (!req) return;
+    const key = `xtr_attendance_records_${req.userKey}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const records = JSON.parse(raw) as any[];
+      const idx = records.findIndex(r => r.id === req.recordId);
+      if (idx === -1) return;
+      const rec = records[idx];
+      let status = rec.status;
+      if (approve) {
+        // rec.duration already computed in request
+        const dur = req.proposedDuration || rec.duration;
+        const m = dur ? dur.match(/(\d+)h\s+(\d+)m/) : null;
+        const minutes = m ? (Number(m[1]) * 60 + Number(m[2])) : 0;
+        status = minutes >= 480 ? "present" : "absent";
+      } else {
+        status = "absent";
+      }
+      records[idx] = {
+        ...rec,
+        checkIn: req.proposedCheckIn ?? rec.checkIn,
+        checkOut: req.proposedCheckOut ?? rec.checkOut,
+        duration: req.proposedDuration ?? rec.duration,
+        status,
+        approvalStatus: approve ? "approved" : "rejected",
+        approvalComment: reviewerComment || rec.approvalComment,
+        notes: rec.notes,
+      };
+      localStorage.setItem(key, JSON.stringify(records));
+    } catch {}
+  };
 
   const handleApprove = (item: any, type: string) => {
     setCurrentApproval({ item, type });
@@ -141,16 +250,22 @@ export function ApprovalsScreen() {
     setShowRescheduleDialog(false);
   };
 
+  const persistLeaves = (next: LeaveRequest[]) => {
+    setLeaveRequests(next);
+    try { localStorage.setItem('xtr_leave_approvals', JSON.stringify(next)); } catch {}
+  };
+
   const confirmApproval = () => {
-    // In a real app, this would update the backend
-    console.log("Approval confirmed:", {
-      approval: currentApproval,
-      type: approvalType,
-      comments,
-      conditions: approvalType === "approve-conditional" ? conditions : undefined,
-      maxDiscount: approvalType === "approve-conditional" ? maxDiscount : undefined,
-    });
-    alert(`${approvalType === "approve" ? "Approved" : approvalType === "reject" ? "Rejected" : "Approved with conditions"} successfully!`);
+    if (!currentApproval) { setShowApprovalDialog(false); return; }
+    if (currentApproval.type === 'leave') {
+      const next = leaveRequests.map(l => l.id === currentApproval.item.id ? {
+        ...l,
+        status: approvalType === 'approve' ? 'approved' : 'rejected',
+        reviewerComment: comments.trim() || l.reviewerComment,
+      } : l);
+      persistLeaves(next);
+      try { window.dispatchEvent(new Event('xtr-approvals-updated')); } catch {}
+    }
     setShowApprovalDialog(false);
   };
 
@@ -216,11 +331,13 @@ export function ApprovalsScreen() {
     totalPending: leaveRequests.filter(l => l.status === "pending").length +
                   discountRequests.filter(d => d.status === "pending").length +
                   jobSubmissions.filter(j => j.status === "pending").length +
-                  reimbursements.filter(r => r.status === "pending").length,
+                  reimbursements.filter(r => r.status === "pending").length +
+                  attendanceApprovals.filter(a => a.status === "pending").length,
     leavePending: leaveRequests.filter(l => l.status === "pending").length,
     discountsPending: discountRequests.filter(d => d.status === "pending").length,
     jobsPending: jobSubmissions.filter(j => j.status === "pending").length,
     reimbursementsPending: reimbursements.filter(r => r.status === "pending").length,
+    attendancePending: attendanceApprovals.filter(a => a.status === "pending").length,
   };
 
   return (
@@ -322,7 +439,7 @@ export function ApprovalsScreen() {
 
       {/* Approvals Tabs */}
       <Tabs defaultValue="leaves" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="leaves">
             <Calendar className="w-4 h-4 mr-2" />
             Leave Requests ({stats.leavePending})
@@ -339,7 +456,102 @@ export function ApprovalsScreen() {
             <Receipt className="w-4 h-4 mr-2" />
             Reimbursements ({stats.reimbursementsPending})
           </TabsTrigger>
+          <TabsTrigger value="attendance">
+            <Clock className="w-4 h-4 mr-2" />
+            Attendance Edits ({stats.attendancePending})
+          </TabsTrigger>
         </TabsList>
+        {/* Attendance Approvals Tab */}
+        <TabsContent value="attendance" className="space-y-4">
+          {attendanceApprovals.length === 0 ? (
+            <Card>
+              <CardContent className="p-6 text-center text-muted-foreground">No attendance edit requests.</CardContent>
+            </Card>
+          ) : (
+            attendanceApprovals.map((req) => (
+              <Card key={req.id}>
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle>Attendance Edit - {req.userEmail}</CardTitle>
+                      <p className="text-muted-foreground">{new Date(req.date).toLocaleDateString()} • Submitted {new Date(req.submittedAt).toLocaleString()}</p>
+                    </div>
+                    {getStatusBadge(req.status)}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-muted-foreground">Proposed Check In</p>
+                      <p>{req.proposedCheckIn || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Proposed Check Out</p>
+                      <p>{req.proposedCheckOut || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Proposed Duration</p>
+                      <p>{req.proposedDuration || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Reason</p>
+                      <p>{req.reason || '-'}</p>
+                    </div>
+                  </div>
+
+                  {req.status === 'pending' && (
+                    <div className="flex gap-2 pt-2">
+                      <Button 
+                        onClick={() => { setCommentRequestId(req.id); setCommentAction('approve'); setCommentText(''); setCommentDialogOpen(true); }}
+                        className="bg-success hover:bg-success/90"
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        Approve
+                      </Button>
+                      <Button 
+                        variant="destructive"
+                        onClick={() => { setCommentRequestId(req.id); setCommentAction('reject'); setCommentText(''); setCommentDialogOpen(true); }}
+                      >
+                        <XCircle className="w-4 h-4 mr-2" />
+                        Reject
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </TabsContent>
+
+        {/* Comment Dialog for Attendance Approval */}
+        <Dialog open={commentDialogOpen} onOpenChange={setCommentDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{commentAction === 'approve' ? 'Approve Attendance Edit' : 'Reject Attendance Edit'}</DialogTitle>
+              <DialogDescription>
+                Please provide a comment. This will be saved with the decision.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Label>Comment</Label>
+              <Textarea rows={4} value={commentText} onChange={(e) => setCommentText(e.target.value)} placeholder={commentAction === 'reject' ? 'Reason for rejection' : 'Optional comment for approval'} />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCommentDialogOpen(false)}>Cancel</Button>
+              <Button 
+                onClick={() => {
+                  if (commentRequestId !== null) {
+                    resolveAttendanceApproval(commentRequestId, commentAction === 'approve', commentText.trim() || undefined);
+                  }
+                  setCommentDialogOpen(false);
+                }}
+                className={commentAction === 'approve' ? 'bg-success hover:bg-success/90' : 'bg-destructive hover:bg-destructive/90'}
+              >
+                {commentAction === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Leave Requests Tab */}
         <TabsContent value="leaves" className="space-y-4">
@@ -385,8 +597,13 @@ export function ApprovalsScreen() {
                 <div className="text-muted-foreground">
                   Applied on {new Date(leave.appliedOn).toLocaleDateString()}
                 </div>
+                {leave.reviewerComment && (
+                  <div className="p-3 bg-muted rounded text-sm">
+                    <span className="text-muted-foreground">Reviewer Comment:</span> {leave.reviewerComment}
+                  </div>
+                )}
 
-                <div className="flex gap-2 pt-2">
+                  <div className="flex gap-2 pt-2">
                   <Button 
                     variant="outline"
                     onClick={() => handleViewDetails(leave, "leave")}
@@ -396,22 +613,22 @@ export function ApprovalsScreen() {
                   </Button>
                   {leave.status === "pending" && (
                     <>
-                      <Button 
-                        onClick={() => handleApprove(leave, "leave")}
-                        className="bg-success hover:bg-success/90"
-                      >
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
-                        Approve
-                      </Button>
-                      <Button 
-                        variant="destructive"
-                        onClick={() => handleReject(leave, "leave")}
-                      >
-                        <XCircle className="w-4 h-4 mr-2" />
-                        Reject
-                      </Button>
+                    <Button 
+                      onClick={() => handleApprove(leave, "leave")}
+                      className="bg-success hover:bg-success/90"
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Approve
+                    </Button>
+                    <Button 
+                      variant="destructive"
+                      onClick={() => handleReject(leave, "leave")}
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Reject
+                    </Button>
                     </>
-                  )}
+                )}
                 </div>
               </CardContent>
             </Card>
@@ -420,7 +637,7 @@ export function ApprovalsScreen() {
 
         {/* Discount Requests Tab */}
         <TabsContent value="discounts" className="space-y-4">
-          {discountRequests.map((discount) => (
+                  {discountRequests.map((discount) => (
             <Card key={discount.id}>
               <CardHeader>
                 <div className="flex items-start justify-between">
@@ -465,7 +682,7 @@ export function ApprovalsScreen() {
                   Submitted on {new Date(discount.submittedOn).toLocaleDateString()}
                 </div>
 
-                <div className="flex gap-2 pt-2">
+                  <div className="flex gap-2 pt-2">
                   <Button 
                     variant="outline"
                     onClick={() => handleViewDetails(discount, "discount")}
@@ -475,29 +692,29 @@ export function ApprovalsScreen() {
                   </Button>
                   {discount.status === "pending" && (
                     <>
-                      <Button 
-                        onClick={() => handleApprove(discount, "discount")}
-                        className="bg-success hover:bg-success/90"
-                      >
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
-                        Approve
-                      </Button>
-                      <Button 
-                        onClick={() => handleApproveWithConditions(discount)}
-                        className="bg-secondary hover:bg-secondary/90"
-                      >
-                        <AlertCircle className="w-4 h-4 mr-2" />
-                        Approve with Conditions
-                      </Button>
-                      <Button 
-                        variant="destructive"
-                        onClick={() => handleReject(discount, "discount")}
-                      >
-                        <XCircle className="w-4 h-4 mr-2" />
-                        Reject
-                      </Button>
+                    <Button 
+                      onClick={() => handleApprove(discount, "discount")}
+                      className="bg-success hover:bg-success/90"
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Approve
+                    </Button>
+                    <Button 
+                      onClick={() => handleApproveWithConditions(discount)}
+                      className="bg-secondary hover:bg-secondary/90"
+                    >
+                      <AlertCircle className="w-4 h-4 mr-2" />
+                      Approve with Conditions
+                    </Button>
+                    <Button 
+                      variant="destructive"
+                      onClick={() => handleReject(discount, "discount")}
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Reject
+                    </Button>
                     </>
-                  )}
+                )}
                 </div>
               </CardContent>
             </Card>
@@ -559,7 +776,7 @@ export function ApprovalsScreen() {
                   <p>{job.description}</p>
                 </div>
 
-                <div className="flex gap-2 pt-2">
+                  <div className="flex gap-2 pt-2">
                   <Button 
                     variant="outline"
                     onClick={() => handleViewDetails(job, "job")}
@@ -569,29 +786,29 @@ export function ApprovalsScreen() {
                   </Button>
                   {job.status === "pending" && (
                     <>
-                      <Button 
-                        onClick={() => handleApprove(job, "job")}
-                        className="bg-success hover:bg-success/90"
-                      >
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
-                        Approve
-                      </Button>
-                      <Button 
-                        onClick={() => handleReschedule(job)}
-                        className="bg-secondary hover:bg-secondary/90"
-                      >
-                        <Calendar className="w-4 h-4 mr-2" />
-                        Reschedule
-                      </Button>
-                      <Button 
-                        variant="destructive"
-                        onClick={() => handleReject(job, "job")}
-                      >
-                        <XCircle className="w-4 h-4 mr-2" />
-                        Reject
-                      </Button>
+                    <Button 
+                      onClick={() => handleApprove(job, "job")}
+                      className="bg-success hover:bg-success/90"
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Approve
+                    </Button>
+                    <Button 
+                      onClick={() => handleReschedule(job)}
+                      className="bg-secondary hover:bg-secondary/90"
+                    >
+                      <Calendar className="w-4 h-4 mr-2" />
+                      Reschedule
+                    </Button>
+                    <Button 
+                      variant="destructive"
+                      onClick={() => handleReject(job, "job")}
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Reject
+                    </Button>
                     </>
-                  )}
+                )}
                 </div>
               </CardContent>
             </Card>
@@ -646,7 +863,7 @@ export function ApprovalsScreen() {
                   Submitted on {new Date(reimb.submittedOn).toLocaleDateString()}
                 </div>
 
-                <div className="flex gap-2 pt-2">
+                  <div className="flex gap-2 pt-2">
                   <Button 
                     variant="outline"
                     onClick={() => handleViewDetails(reimb, "reimbursement")}
@@ -656,22 +873,22 @@ export function ApprovalsScreen() {
                   </Button>
                   {reimb.status === "pending" && (
                     <>
-                      <Button 
-                        onClick={() => handleApprove(reimb, "reimbursement")}
-                        className="bg-success hover:bg-success/90"
-                      >
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
-                        Approve
-                      </Button>
-                      <Button 
-                        variant="destructive"
-                        onClick={() => handleReject(reimb, "reimbursement")}
-                      >
-                        <XCircle className="w-4 h-4 mr-2" />
-                        Reject
-                      </Button>
+                    <Button 
+                      onClick={() => handleApprove(reimb, "reimbursement")}
+                      className="bg-success hover:bg-success/90"
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Approve
+                    </Button>
+                    <Button 
+                      variant="destructive"
+                      onClick={() => handleReject(reimb, "reimbursement")}
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Reject
+                    </Button>
                     </>
-                  )}
+                )}
                 </div>
               </CardContent>
             </Card>
@@ -995,16 +1212,14 @@ export function ApprovalsScreen() {
                     <CardHeader>
                       <CardTitle className="text-lg">Employee Information</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm text-gray-600">Employee Name</p>
-                          <p className="font-medium">{selectedItem.employeeName}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Department</p>
-                          <p className="font-medium">{selectedItem.department}</p>
-                        </div>
+                    <CardContent className="space-y-2">
+                      <div>
+                        <p className="text-sm text-gray-600">Employee Email</p>
+                        <p className="font-medium break-all">{selectedItem.employeeName}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Department</p>
+                        <p className="font-medium">{selectedItem.department}</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -1013,11 +1228,11 @@ export function ApprovalsScreen() {
                     <CardHeader>
                       <CardTitle className="text-lg">Leave Details</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-3">
+                    <CardContent className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <p className="text-sm text-gray-600">Leave Type</p>
-                          <p className="font-medium">{selectedItem.leaveType}</p>
+                          <p className="font-medium">{String(selectedItem.leaveType || '').charAt(0).toUpperCase() + String(selectedItem.leaveType || '').slice(1)}</p>
                         </div>
                         <div>
                           <p className="text-sm text-gray-600">Duration</p>
@@ -1025,24 +1240,24 @@ export function ApprovalsScreen() {
                         </div>
                         <div>
                           <p className="text-sm text-gray-600">Start Date</p>
-                          <p className="font-medium">{new Date(selectedItem.startDate).toLocaleDateString()}</p>
+                          <p className="font-medium">{new Date(selectedItem.startDate).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                         </div>
                         <div>
                           <p className="text-sm text-gray-600">End Date</p>
-                          <p className="font-medium">{new Date(selectedItem.endDate).toLocaleDateString()}</p>
+                          <p className="font-medium">{new Date(selectedItem.endDate).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                         </div>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Reason</p>
-                        <p className="font-medium">{selectedItem.reason}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Applied On</p>
-                        <p className="font-medium">{new Date(selectedItem.appliedOn).toLocaleDateString()}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Status</p>
-                        {getStatusBadge(selectedItem.status)}
+                        <div>
+                          <p className="text-sm text-gray-600">Reason</p>
+                          <p className="font-medium">{selectedItem.reason || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Applied On</p>
+                          <p className="font-medium">{new Date(selectedItem.appliedOn).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Status</p>
+                          {getStatusBadge(selectedItem.status)}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>

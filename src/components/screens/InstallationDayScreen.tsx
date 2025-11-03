@@ -320,9 +320,9 @@ export function InstallationDayScreen() {
             <div className="grid grid-cols-2 gap-4 mb-4">
               {photos.map((photo) => (
                 <div key={photo.id} className="aspect-video bg-muted rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-muted/70 transition-colors" onClick={() => handlePhotoClick(photo)}>
-                  <Camera className="w-8 h-8 text-muted-foreground mb-2" />
+                <Camera className="w-8 h-8 text-muted-foreground mb-2" />
                   <span className="text-muted-foreground">{photo.title}</span>
-                </div>
+              </div>
               ))}
             </div>
             <Button variant="outline" className="w-full" onClick={handleTakePhoto}>
@@ -429,13 +429,13 @@ export function InstallationDayScreen() {
           </CardHeader>
           <CardContent className="space-y-4">
             {jobStarted ? (
-              <div className="flex items-center justify-between p-4 bg-success/10 border border-success rounded-lg">
-                <div>
-                  <p>Job Started</p>
+            <div className="flex items-center justify-between p-4 bg-success/10 border border-success rounded-lg">
+              <div>
+                <p>Job Started</p>
                   <p className="text-muted-foreground">{jobStartTime?.toLocaleTimeString()}</p>
-                </div>
-                <Badge className="bg-success text-success-foreground">Active</Badge>
               </div>
+              <Badge className="bg-success text-success-foreground">Active</Badge>
+            </div>
             ) : (
               <div className="flex items-center justify-between p-4 bg-muted/50 border border-muted rounded-lg">
                 <div>
@@ -466,7 +466,7 @@ export function InstallationDayScreen() {
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Add Break
-              </Button>
+            </Button>
             </div>
             <p className="text-muted-foreground text-center">
               Complete all checklist items to end job

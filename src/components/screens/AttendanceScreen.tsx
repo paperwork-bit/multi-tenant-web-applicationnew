@@ -34,6 +34,8 @@ interface AttendanceRecord {
   duration: string | null;
   status: "present" | "absent" | "half-day" | "leave";
   notes?: string;
+  approvalStatus?: "pending" | "approved" | "rejected";
+  approvalComment?: string;
 }
 
 interface LeaveBalance {
@@ -54,11 +56,12 @@ interface LeaveRequest {
   appliedOn: string;
 }
 
-export function AttendanceScreen() {
+export function AttendanceScreen({ userEmail, department }: { userEmail?: string; department?: string }) {
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   const [checkInTime, setCheckInTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState("00:00:00");
   const [currentLocation, setCurrentLocation] = useState("Loading location...");
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [showAttendanceDialog, setShowAttendanceDialog] = useState(false);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -89,6 +92,51 @@ export function AttendanceScreen() {
     }
   }, []);
 
+  // Hydrate attendance records from localStorage
+  useEffect(() => {
+    try {
+      const key = `xtr_attendance_records_${(userEmail || 'guest').toLowerCase()}`;
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw) as AttendanceRecord[];
+        // Normalize legacy notes that embedded "Approval: <comment>"
+        const normalized = parsed.map((r) => {
+          if (r.approvalComment) return r;
+          if (r.notes && r.notes.includes('Approval:')) {
+            const idx = r.notes.lastIndexOf('Approval:');
+            const base = r.notes.slice(0, idx).replace(/\|\s*$/,'').trim();
+            const comment = r.notes.slice(idx + 'Approval:'.length).trim();
+            return { ...r, notes: base || undefined, approvalComment: comment } as AttendanceRecord;
+          }
+          return r;
+        });
+        setAttendanceRecords(normalized);
+        // If there's an open record for today without checkout, restore check-in state
+        const todayKey = new Date().toISOString().slice(0, 10);
+        const open = normalized.find(r => r.date === todayKey && r.checkIn && !r.checkOut);
+        if (open && open.checkIn) {
+          const [h, m] = open.checkIn.split(":");
+          const restored = new Date();
+          restored.setHours(Number(h), Number(m), 0, 0);
+          setCheckInTime(restored);
+          setIsCheckedIn(true);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [userEmail]);
+
+  // Persist attendance records
+  useEffect(() => {
+    try {
+      const key = `xtr_attendance_records_${(userEmail || 'guest').toLowerCase()}`;
+      localStorage.setItem(key, JSON.stringify(attendanceRecords));
+    } catch {
+      // ignore
+    }
+  }, [attendanceRecords, userEmail]);
+
   // Update elapsed time
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -107,24 +155,137 @@ export function AttendanceScreen() {
     return () => clearInterval(interval);
   }, [isCheckedIn, checkInTime]);
 
+  // Utility: has completed attendance for today
+  const hasCompletedToday = (() => {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const rec = attendanceRecords.find(r => r.date === todayKey);
+    return Boolean(rec && rec.checkIn && rec.checkOut);
+  })();
+
   const handleCheckIn = () => {
+    // Prevent re-check-in if today is already completed
+    if (hasCompletedToday) {
+      return;
+    }
     const now = new Date();
     setCheckInTime(now);
     setIsCheckedIn(true);
-    // In real app, would save to backend with location
+    // Save record for today (or update if exists)
+    const dateKey = now.toISOString().slice(0, 10);
+    const timeStr = now.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false });
+    setAttendanceRecords(prev => {
+      const existingIndex = prev.findIndex(r => r.date === dateKey);
+      const next: AttendanceRecord[] = [...prev];
+      if (existingIndex >= 0) {
+        next[existingIndex] = {
+          ...next[existingIndex],
+          checkIn: timeStr,
+          checkOut: null,
+          checkInLocation: currentLocation,
+          status: "absent",
+        };
+      } else {
+        next.unshift({
+          id: Date.now(),
+          date: dateKey,
+          checkIn: timeStr,
+          checkOut: null,
+          checkInLocation: currentLocation,
+          checkOutLocation: null,
+          duration: null,
+          status: "absent",
+          notes: undefined,
+        });
+      }
+      return next;
+    });
   };
 
   const handleCheckOut = () => {
     setIsCheckedIn(false);
-    // In real app, would save to backend with location
+    const now = new Date();
+    const dateKey = now.toISOString().slice(0, 10);
+    const timeStr = now.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false });
+    setAttendanceRecords(prev => {
+      const idx = prev.findIndex(r => r.date === dateKey);
+      if (idx === -1) return prev; // nothing to update
+      const rec = prev[idx];
+      // compute duration if checkIn exists
+      let duration: string | null = rec.duration ?? null;
+      if (rec.checkIn) {
+        const [ciH, ciM] = rec.checkIn.split(":").map(Number);
+        const start = new Date(now);
+        start.setHours(ciH, ciM, 0, 0);
+        const diff = now.getTime() - start.getTime();
+        const hours = Math.max(0, Math.floor(diff / 3600000));
+        const minutes = Math.max(0, Math.floor((diff % 3600000) / 60000));
+        duration = `${hours}h ${minutes}m`;
+      }
+      // Determine status based on shift hours (8h threshold)
+      const minutes = (() => {
+        if (!duration) return 0;
+        const m = duration.match(/(\d+)h\s+(\d+)m/);
+        if (!m) return 0;
+        return Number(m[1]) * 60 + Number(m[2]);
+      })();
+      const completedEightHours = minutes >= 8 * 60;
+
+      const next = [...prev];
+      next[idx] = {
+        ...rec,
+        checkOut: timeStr,
+        checkOutLocation: currentLocation,
+        duration,
+        status: completedEightHours ? "present" : "absent",
+      };
+      return next;
+    });
   };
 
-  // Sample attendance data
-  const attendanceRecords: AttendanceRecord[] = [];
+  // Month selector default to current month
+  useEffect(() => {
+    const d = new Date();
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    setSelectedMonth(ym);
+  }, []);
 
   const leaveBalances: LeaveBalance[] = [];
 
-  const leaveRequests: LeaveRequest[] = [];
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+
+  // Load and keep leave requests for this user in sync
+  useEffect(() => {
+    const load = () => {
+      try {
+        const raw = localStorage.getItem('xtr_leave_approvals');
+        const items = (raw ? JSON.parse(raw) : []) as any[];
+        const filtered = items
+          .filter(i => String(i.employeeName || '').toLowerCase() === (userEmail || 'user').toLowerCase())
+          .map(i => ({
+            id: i.id,
+            type: i.leaveType,
+            startDate: i.startDate,
+            endDate: i.endDate,
+            duration: i.days === 0.5 ? 'Half Day' : `${i.days} day${i.days === 1 ? '' : 's'}`,
+            reason: i.reason,
+            appliedOn: i.appliedOn,
+            status: i.status as 'pending' | 'approved' | 'rejected',
+          })) as LeaveRequest[];
+        setLeaveRequests(filtered);
+      } catch {
+        setLeaveRequests([]);
+      }
+    };
+    load();
+    const onStorage = (e: StorageEvent) => { if (!e.key || e.key === 'xtr_leave_approvals') load(); };
+    const onCustom = () => load();
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('xtr-approvals-updated', onCustom as EventListener);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('xtr-approvals-updated', onCustom as EventListener);
+    };
+  }, [userEmail]);
 
   const handleEditAttendance = (record: AttendanceRecord) => {
     setSelectedAttendance(record);
@@ -135,22 +296,145 @@ export function AttendanceScreen() {
   };
 
   const submitEditAttendance = () => {
-    // In real app, would save to backend
-    console.log("Edit attendance:", {
-      id: selectedAttendance?.id,
-      checkIn: editCheckIn,
-      checkOut: editCheckOut,
-      reason: editReason
+    if (!selectedAttendance) {
+      setShowEditDialog(false);
+      return;
+    }
+
+    setAttendanceRecords((prev) => {
+      const next = [...prev];
+      const idx = next.findIndex((r) => r.id === selectedAttendance.id);
+      if (idx === -1) return prev;
+
+      // Compute duration if both times are provided
+      let duration: string | null = null;
+      if (editCheckIn && editCheckOut) {
+        const [ciH, ciM] = editCheckIn.split(":").map(Number);
+        const [coH, coM] = editCheckOut.split(":").map(Number);
+        const start = new Date();
+        start.setHours(ciH || 0, ciM || 0, 0, 0);
+        const end = new Date();
+        end.setHours(coH || 0, coM || 0, 0, 0);
+        let diff = end.getTime() - start.getTime();
+        if (diff < 0) diff = 0;
+        const hours = Math.floor(diff / 3600000);
+        const minutes = Math.floor((diff % 3600000) / 60000);
+        duration = `${hours}h ${minutes}m`;
+      }
+
+      next[idx] = {
+        ...next[idx],
+        checkIn: editCheckIn || next[idx].checkIn,
+        checkOut: editCheckOut || next[idx].checkOut,
+        duration: duration ?? next[idx].duration,
+        // Do not flip status yet; await approval
+        approvalStatus: "pending",
+        notes: editReason ? `Edit reason: ${editReason}` : next[idx].notes,
+      };
+      const updated = next[idx];
+      // Enqueue approval request for operations
+      try {
+        const approvalsKey = "xtr_attendance_approvals";
+        const raw = localStorage.getItem(approvalsKey);
+        const approvals = raw ? JSON.parse(raw) : [];
+        approvals.unshift({
+          id: Date.now(),
+          userKey: (userEmail || 'guest').toLowerCase(),
+          userEmail: userEmail || 'guest',
+          recordId: updated.id,
+          date: updated.date,
+          proposedCheckIn: updated.checkIn,
+          proposedCheckOut: updated.checkOut,
+          proposedDuration: updated.duration,
+          reason: editReason,
+          status: 'pending',
+          submittedAt: new Date().toISOString(),
+        });
+        localStorage.setItem(approvalsKey, JSON.stringify(approvals));
+        try { window.dispatchEvent(new Event('xtr-approvals-updated')); } catch {}
+      } catch {}
+
+      return next;
     });
+
     setShowEditDialog(false);
+    try { alert('Attendance edit submitted for approval.'); } catch {}
+  };
+
+  const resolveApproval = (recordId: number, approve: boolean) => {
+    setAttendanceRecords(prev => {
+      const next = [...prev];
+      const idx = next.findIndex(r => r.id === recordId);
+      if (idx === -1) return prev;
+      const rec = next[idx];
+
+      // On approval, set status based on duration (8h threshold); on rejection, absent
+      let status = rec.status;
+      if (approve) {
+        const minutesTotal = (() => {
+          if (!rec.duration) return 0;
+          const m = rec.duration.match(/(\d+)h\s+(\d+)m/);
+          if (!m) return 0;
+          return Number(m[1]) * 60 + Number(m[2]);
+        })();
+        status = minutesTotal >= 8 * 60 ? "present" : "absent";
+      } else {
+        status = "absent";
+      }
+
+      next[idx] = {
+        ...rec,
+        status,
+        approvalStatus: approve ? "approved" : "rejected",
+      };
+      return next;
+    });
   };
 
   const submitLeaveRequest = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    // In real app, would save to backend
-    console.log("Leave request:", Object.fromEntries(formData));
+    const leaveType = String(formData.get('leaveType') || '');
+    const duration = String(formData.get('duration') || '');
+    const startDate = String(formData.get('startDate') || '');
+    const endDate = String(formData.get('endDate') || '');
+    const reason = String(formData.get('reason') || '');
+
+    const overrideDept = (() => {
+      const em = String(userEmail || '').toLowerCase();
+      if (em === 'ashely@xtechsrenewables.com.au') return 'On-Field';
+      if (em === 'liam@xtechsrenewables.com.au') return 'On-Field';
+      if (em === 'james@xtechsrenewables.com.au') return 'Sales';
+      if (em === 'neil@xtechsrenewables.com.au') return 'Project Management';
+      if (em === 'paperwork@xtechsrenewables.com.au') return 'Operations';
+      return undefined;
+    })();
+
+    const payload = {
+      id: Date.now(),
+      employeeName: (userEmail || 'User'),
+      department: overrideDept || department || 'General',
+      leaveType,
+      startDate,
+      endDate,
+      days: duration.includes('half') ? 0.5 : Number(duration.includes('full') ? 1 : (duration || '1').replace(/[^0-9.]/g, '')) || 1,
+      reason,
+      appliedOn: new Date().toISOString(),
+      status: 'pending',
+      reviewerComment: undefined as string | undefined,
+    };
+
+    try {
+      const key = 'xtr_leave_approvals';
+      const raw = localStorage.getItem(key);
+      const existing = raw ? JSON.parse(raw) : [];
+      existing.unshift(payload);
+      localStorage.setItem(key, JSON.stringify(existing));
+      try { window.dispatchEvent(new Event('xtr-approvals-updated')); } catch {}
+    } catch {}
+
     setShowLeaveDialog(false);
+    try { alert('Leave request submitted for approval.'); } catch {}
   };
 
   const handleStatsClick = (statType: string) => {
@@ -175,7 +459,19 @@ export function AttendanceScreen() {
     totalDays: attendanceRecords.length,
     presentDays: attendanceRecords.filter(r => r.status === "present" || r.status === "half-day").length,
     leaveDays: attendanceRecords.filter(r => r.status === "leave").length,
-    avgHours: "8h 30m"
+    avgHours: (() => {
+      const durations = attendanceRecords
+        .map(r => r.duration)
+        .filter(Boolean) as string[];
+      if (!durations.length) return "0h 0m";
+      const totalMin = durations.reduce((sum, d) => {
+        const match = d.match(/(\d+)h\s+(\d+)m/);
+        if (!match) return sum;
+        return sum + Number(match[1]) * 60 + Number(match[2]);
+      }, 0);
+      const avg = Math.floor(totalMin / durations.length);
+      return `${Math.floor(avg / 60)}h ${avg % 60}m`;
+    })()
   };
 
   return (
@@ -205,10 +501,14 @@ export function AttendanceScreen() {
                   onClick={handleCheckIn}
                   size="lg"
                   className="bg-success hover:bg-success/90 text-success-foreground px-12"
+                  disabled={hasCompletedToday}
                 >
                   <LogIn className="w-5 h-5 mr-2" />
                   Check In
                 </Button>
+                {hasCompletedToday && (
+                  <p className="text-sm text-muted-foreground">You've already checked in and out today.</p>
+                )}
               </>
             ) : (
               <>
@@ -353,6 +653,8 @@ export function AttendanceScreen() {
                     <TableHead>Duration</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Notes</TableHead>
+                    <TableHead>Approval</TableHead>
+                    <TableHead>Comments</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -409,6 +711,9 @@ export function AttendanceScreen() {
                         {record.status === "present" && (
                           <Badge className="bg-success text-success-foreground">Present</Badge>
                         )}
+                        {record.status === "absent" && (
+                          <Badge className="bg-destructive text-destructive-foreground">Absent</Badge>
+                        )}
                         {record.status === "half-day" && (
                           <Badge className="bg-warning text-warning-foreground">Half Day</Badge>
                         )}
@@ -424,18 +729,51 @@ export function AttendanceScreen() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {(!record.checkIn || !record.checkOut) && record.status !== "leave" && (
+                        {record.approvalStatus === "pending" && (
+                          <Badge className="bg-warning text-warning-foreground">Pending</Badge>
+                        )}
+                        {record.approvalStatus === "approved" && (
+                          <Badge variant="outline" className="border-success text-success">Approved</Badge>
+                        )}
+                        {record.approvalStatus === "rejected" && (
+                          <Badge variant="outline" className="border-destructive text-destructive">Rejected</Badge>
+                        )}
+                        {!record.approvalStatus && <span className="text-muted-foreground">-</span>}
+                      </TableCell>
+                      <TableCell>
+                        {record.approvalComment ? (
+                          <span className="text-muted-foreground">{record.approvalComment}</span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2 justify-start">
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleEditAttendance(record);
+                              handleAttendanceRecordClick(record);
                             }}
+                            aria-label="View details"
                           >
-                            <Edit className="w-4 h-4" />
+                            <Eye className="w-4 h-4" />
                           </Button>
-                        )}
+                          {((!record.checkIn || !record.checkOut) || record.status === "absent") && record.status !== "leave" && !record.approvalStatus && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditAttendance(record);
+                              }}
+                              aria-label="Edit record"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -962,7 +1300,7 @@ export function AttendanceScreen() {
             <DialogDescription>Detailed information about this attendance record</DialogDescription>
           </DialogHeader>
           
-          {selectedAttendanceRecord && (
+              {selectedAttendanceRecord && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -978,7 +1316,7 @@ export function AttendanceScreen() {
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Status</Label>
-                  <div className="mt-1">
+                  <div className="mt-1 flex items-center gap-2">
                     {selectedAttendanceRecord.status === "present" && (
                       <Badge className="bg-success text-success-foreground">Present</Badge>
                     )}
@@ -987,6 +1325,15 @@ export function AttendanceScreen() {
                     )}
                     {selectedAttendanceRecord.status === "leave" && (
                       <Badge variant="outline">Leave</Badge>
+                    )}
+                    {selectedAttendanceRecord.status === "absent" && (
+                      <Badge className="bg-destructive text-destructive-foreground">Absent</Badge>
+                    )}
+                    {selectedAttendanceRecord.approvalStatus === "approved" && (
+                      <Badge variant="outline" className="border-success text-success">Approved</Badge>
+                    )}
+                    {selectedAttendanceRecord.approvalStatus === "rejected" && (
+                      <Badge variant="outline" className="border-destructive text-destructive">Rejected</Badge>
                     )}
                   </div>
                 </div>
@@ -1020,12 +1367,22 @@ export function AttendanceScreen() {
                 <p className="text-lg">{selectedAttendanceRecord.duration || "Not calculated"}</p>
               </div>
               
-              {selectedAttendanceRecord.notes && (
+              <div>
+                <Label className="text-sm font-medium">Notes</Label>
+                <p className="text-lg">{selectedAttendanceRecord.notes || "-"}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-sm font-medium">Notes</Label>
-                  <p className="text-lg">{selectedAttendanceRecord.notes}</p>
+                  <Label className="text-sm font-medium">Approval</Label>
+                  <p className="text-lg">
+                    {selectedAttendanceRecord.approvalStatus ? selectedAttendanceRecord.approvalStatus.charAt(0).toUpperCase() + selectedAttendanceRecord.approvalStatus.slice(1) : "-"}
+                  </p>
                 </div>
-              )}
+                <div>
+                  <Label className="text-sm font-medium">Comments</Label>
+                  <p className="text-lg">{selectedAttendanceRecord.approvalComment || "-"}</p>
+                </div>
+              </div>
             </div>
           )}
 

@@ -481,7 +481,7 @@ export function ProjectManagementScreen() {
       color: "border-purple-300",
       projects: []
     },
-    {
+        {
       id: "stage-1",
       title: "Stage 1",
       color: "border-orange-300",

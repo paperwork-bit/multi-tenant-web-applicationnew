@@ -29,6 +29,7 @@ import {
   Filter,
   Search
 } from "lucide-react";
+import { getXeroStatus, connectXero as apiConnectXero, disconnectXero as apiDisconnectXero, syncPayroll as apiSyncPayroll, syncReimbursements as apiSyncReimb } from "../../lib/xeroClient";
 
 interface EmployeePayroll {
   id: number;
@@ -79,11 +80,19 @@ export function PayrollScreen() {
   const [reimbursementAction, setReimbursementAction] = useState<"approve" | "reject">("approve");
   const [payrollApproved, setPayrollApproved] = useState(false);
   const [reimbursementsApproved, setReimbursementsApproved] = useState(false);
-  const [xeroConnected, setXeroConnected] = useState(true);
+  const [xeroConnected, setXeroConnected] = useState<boolean>(() => {
+    try { return JSON.parse(localStorage.getItem('xtr_xero_connected') || 'false'); } catch { return false; }
+  });
   const [xeroSyncing, setXeroSyncing] = useState(false);
   const [xeroReimbursementSyncing, setXeroReimbursementSyncing] = useState(false);
-  const [lastXeroSync, setLastXeroSync] = useState<Date | null>(new Date(2025, 9, 15, 14, 30));
-  const [lastReimbursementSync, setLastReimbursementSync] = useState<Date | null>(new Date(2025, 9, 15, 10, 15));
+  const [lastXeroSync, setLastXeroSync] = useState<Date | null>(() => {
+    const v = localStorage.getItem('xtr_xero_last_sync');
+    return v ? new Date(v) : null;
+  });
+  const [lastReimbursementSync, setLastReimbursementSync] = useState<Date | null>(() => {
+    const v = localStorage.getItem('xtr_xero_last_reimb_sync');
+    return v ? new Date(v) : null;
+  });
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterStatus, setFilterStatus] = useState("pending");
   const [searchQuery, setSearchQuery] = useState("");
@@ -246,6 +255,40 @@ export function PayrollScreen() {
     window.URL.revokeObjectURL(url);
   };
 
+  // Xero connection helpers (frontend placeholder)
+  const connectToXero = async () => {
+    try { await apiConnectXero(); } catch {}
+    setXeroConnected(true);
+    try { localStorage.setItem('xtr_xero_connected', 'true'); } catch {}
+    setShowXeroIntegrationDialog(false);
+  };
+
+  const disconnectXero = async () => {
+    try { await apiDisconnectXero(); } catch {}
+    setXeroConnected(false);
+    try { localStorage.setItem('xtr_xero_connected', 'false'); } catch {}
+  };
+
+  const syncPayrollToXero = async () => {
+    if (!xeroConnected) { setShowXeroIntegrationDialog(true); return; }
+    setXeroSyncing(true);
+    try { await apiSyncPayroll(); } catch {}
+    const now = new Date();
+    setLastXeroSync(now);
+    try { localStorage.setItem('xtr_xero_last_sync', now.toISOString()); } catch {}
+    setXeroSyncing(false);
+  };
+
+  const syncReimbursementsToXero = async () => {
+    if (!xeroConnected) { setShowXeroIntegrationDialog(true); return; }
+    setXeroReimbursementSyncing(true);
+    try { await apiSyncReimb(); } catch {}
+    const now = new Date();
+    setLastReimbursementSync(now);
+    try { localStorage.setItem('xtr_xero_last_reimb_sync', now.toISOString()); } catch {}
+    setXeroReimbursementSyncing(false);
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -255,6 +298,23 @@ export function PayrollScreen() {
           <p className="text-muted-foreground">Manage employee payroll and reimbursements</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowXeroIntegrationDialog(true)}>
+            {xeroConnected ? (
+              <>
+                <Link2 className="w-4 h-4 mr-2" />
+                Xero Connected
+              </>
+            ) : (
+              <>
+                <Link2 className="w-4 h-4 mr-2" />
+                Connect to Xero
+              </>
+            )}
+          </Button>
+          <Button onClick={syncPayrollToXero} disabled={!xeroConnected || xeroSyncing}>
+            <CloudUpload className="w-4 h-4 mr-2" />
+            {xeroSyncing ? 'Syncing…' : 'Sync to Xero'}
+          </Button>
           <Button variant="outline" onClick={handleViewHistory}>
             <Clock className="w-4 h-4 mr-2" />
             History
@@ -308,6 +368,16 @@ export function PayrollScreen() {
                   Pending Approval
                 </Badge>
               )}
+            </div>
+          </div>
+          <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-3 h-3" />
+              Last Xero sync: {lastXeroSync ? lastXeroSync.toLocaleString() : 'Never'}
+            </div>
+            <div className="flex items-center gap-2">
+              {xeroConnected && <Badge className="bg-emerald-100 text-emerald-700">Xero Connected</Badge>}
+              <Button variant="ghost" size="sm" onClick={() => setShowXeroIntegrationDialog(true)}>Manage Connection</Button>
             </div>
           </div>
         </CardContent>
@@ -531,6 +601,30 @@ export function PayrollScreen() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Xero Integration Dialog */}
+      <Dialog open={showXeroIntegrationDialog} onOpenChange={setShowXeroIntegrationDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Xero Integration</DialogTitle>
+            <DialogDescription>Connect your Xero organisation to enable payroll and reimbursement sync.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">This demo uses a local connection state. In production, this opens an OAuth2 flow and securely stores tokens on the server.</p>
+            {xeroConnected ? (
+              <div className="flex items-center justify-between">
+                <Badge className="bg-emerald-100 text-emerald-700">Connected</Badge>
+                <Button variant="destructive" onClick={disconnectXero}><XCircle className="w-4 h-4 mr-2" />Disconnect</Button>
+              </div>
+            ) : (
+              <Button onClick={connectToXero}><Link2 className="w-4 h-4 mr-2" />Connect to Xero</Button>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowXeroIntegrationDialog(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -76,7 +76,7 @@ export function ResourceManagementScreen() {
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterDepartment, setFilterDepartment] = useState("all");
-  
+
   // New dialog states
   const [showResourceDetails, setShowResourceDetails] = useState(false);
   const [showStatsDialog, setShowStatsDialog] = useState(false);
@@ -761,7 +761,7 @@ export function ResourceManagementScreen() {
             <span className={firebaseEnabled ? "text-green-600" : "text-red-600"}>
               {firebaseEnabled ? `Firebase: ON (${import.meta.env.VITE_FIREBASE_PROJECT_ID || '-'})` : 'Firebase: OFF'}
             </span>
-          </div>
+        </div>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" onClick={handleReportsClick}>
@@ -772,8 +772,8 @@ export function ResourceManagementScreen() {
             <Download className="w-4 h-4 mr-2" />
             Export
           </Button>
-          <Button onClick={() => {
-            setSelectedResource(null);
+        <Button onClick={() => {
+          setSelectedResource(null);
             setFormData({
               name: "",
               email: "",
@@ -786,11 +786,11 @@ export function ResourceManagementScreen() {
               department: "",
               employeeId: ""
             });
-            setShowAddDialog(true);
-          }}>
-            <UserPlus className="w-4 h-4 mr-2" />
-            Add Resource
-          </Button>
+          setShowAddDialog(true);
+        }}>
+          <UserPlus className="w-4 h-4 mr-2" />
+          Add Resource
+        </Button>
         </div>
       </div>
 
@@ -928,8 +928,8 @@ export function ResourceManagementScreen() {
                       ) : (
                         resource.skills.map((skill, idx) => (
                           <Badge key={idx} variant="outline" className="text-xs">
-                            {skill}
-                          </Badge>
+                          {skill}
+                        </Badge>
                         ))
                       )}
                     </div>

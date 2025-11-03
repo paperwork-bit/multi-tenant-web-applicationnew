@@ -123,12 +123,18 @@ interface ProjectFormState {
   preApprovalNumber: string;
   distributor: string;
   meterNumber: string;
+  // System Information
+  systemSize: string;
+  panelType: string;
+  inverterType: string;
+  batterySize: string;
+  mountingType: string;
 }
 
 const createInitialProjectForm = (): ProjectFormState => ({
   title: "",
   status: "new",
-  systemType: "pv-only",
+  systemType: "",
   price: "",
   projectId: "",
   startDate: "",
@@ -154,6 +160,12 @@ const createInitialProjectForm = (): ProjectFormState => ({
   preApprovalNumber: "",
   distributor: "",
   meterNumber: "",
+  // System Information
+  systemSize: "",
+  panelType: "",
+  inverterType: "",
+  batterySize: "",
+  mountingType: "",
 });
 
 interface ResourceMultiSelectProps {
@@ -394,7 +406,7 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
       ...base,
       title: selectedLead.title,
       status: 'new',
-      systemType: 'pv-only',
+      systemType: '',
       projectId: autoId,
       startDate: new Date().toISOString().split('T')[0],
       notes: selectedLead.description || '',
@@ -448,6 +460,13 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
         preApprovalNumber: projectForm.preApprovalNumber || null,
         distributor: projectForm.distributor || null,
         meterNumber: projectForm.meterNumber || null,
+      },
+      systemInfo: {
+        systemSize: projectForm.systemSize || null,
+        panelType: projectForm.panelType || null,
+        inverterType: projectForm.inverterType || null,
+        batterySize: projectForm.batterySize || null,
+        mountingType: projectForm.mountingType || null,
       },
       createdAt: new Date().toISOString(),
     };
@@ -1013,6 +1032,82 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
                 <Input value={projectForm.projectId} readOnly />
               </div>
             </div>
+
+            {/* System Information - Only visible when system type is selected */}
+            {projectForm.systemType && (
+              <div className="p-3 border rounded-lg bg-muted/50">
+                <p className="font-medium mb-3">System Information</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>System Size (kW)</Label>
+                    <Input 
+                      value={projectForm.systemSize} 
+                      onChange={(e) => setProjectForm({ ...projectForm, systemSize: e.target.value })} 
+                      placeholder="e.g., 6.6" 
+                      type="number"
+                      step="0.1"
+                    />
+                  </div>
+                  <div>
+                    <Label>Panel Type</Label>
+                    <Select value={projectForm.panelType} onValueChange={(v) => setProjectForm({ ...projectForm, panelType: v })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Panel Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="monocrystalline">Monocrystalline</SelectItem>
+                        <SelectItem value="polycrystalline">Polycrystalline</SelectItem>
+                        <SelectItem value="thin-film">Thin-Film</SelectItem>
+                        <SelectItem value="bifacial">Bifacial</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {(projectForm.systemType === "pv-only" || projectForm.systemType === "pv-battery" || projectForm.systemType === "pv-battery-ev" || projectForm.systemType === "pv-ev") && (
+                    <div>
+                      <Label>Inverter Type</Label>
+                      <Select value={projectForm.inverterType} onValueChange={(v) => setProjectForm({ ...projectForm, inverterType: v })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Inverter Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="string-inverter">String Inverter</SelectItem>
+                          <SelectItem value="micro-inverter">Micro Inverter</SelectItem>
+                          <SelectItem value="central-inverter">Central Inverter</SelectItem>
+                          <SelectItem value="hybrid-inverter">Hybrid Inverter</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {(projectForm.systemType === "battery-only" || projectForm.systemType === "pv-battery" || projectForm.systemType === "pv-battery-ev" || projectForm.systemType === "battery-ev") && (
+                    <div>
+                      <Label>Battery Size (kWh)</Label>
+                      <Input 
+                        value={projectForm.batterySize} 
+                        onChange={(e) => setProjectForm({ ...projectForm, batterySize: e.target.value })} 
+                        placeholder="e.g., 10" 
+                        type="number"
+                        step="0.1"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <Label>Mounting Type</Label>
+                    <Select value={projectForm.mountingType} onValueChange={(v) => setProjectForm({ ...projectForm, mountingType: v })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Mounting Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="roof-mounted">Roof Mounted</SelectItem>
+                        <SelectItem value="ground-mounted">Ground Mounted</SelectItem>
+                        <SelectItem value="pole-mounted">Pole Mounted</SelectItem>
+                        <SelectItem value="tracking-system">Tracking System</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div>
               <Label>Project Title</Label>
               <Input value={projectForm.title} onChange={(e) => setProjectForm({ ...projectForm, title: e.target.value })} placeholder="Project title" />

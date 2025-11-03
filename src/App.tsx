@@ -166,7 +166,7 @@ function App() {
     } else if (lowerEmail === "paperwork@xtechsrenewables.com.au") {
       if (!enforceRetailerTeam("operations", "Access denied: This account is restricted to Operations team. Please select Operations to continue.")) {
         return;
-      }
+    }
     } else if (lowerEmail === "ashely@xtechsrenewables.com.au") {
       if (!enforceRetailerTeam("on-field", "Access denied: This account is restricted to On-Field team. Please select On-Field to continue.")) {
         return;
@@ -409,7 +409,12 @@ function App() {
       case "payroll":
         return <PayrollScreen />;
       case "attendance":
-        return <AttendanceScreen />;
+        return <AttendanceScreen userEmail={userEmail} department={
+          retailerTeam === 'on-field' ? 'On-Field' :
+          retailerTeam === 'project-management' ? 'Project Management' :
+          retailerTeam === 'operations' ? 'Operations' :
+          retailerTeam === 'sales' ? 'Sales' : undefined
+        } />;
       default:
         return <DashboardScreen retailerTeam={retailerTeam} />;
     }
