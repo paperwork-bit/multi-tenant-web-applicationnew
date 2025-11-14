@@ -19,6 +19,7 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
   const [retailerTeam, setRetailerTeam] = useState<RetailerTeam>("sales");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState<string>("");
 
 
   return (
@@ -78,26 +79,53 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
                   autoComplete="off"
                   onSubmit={(e)=>{
                     e.preventDefault();
+                    setError("");
                     const em = (email || "").toLowerCase().trim();
+                    const pw = (password || "").trim();
+                    // Basic field validations
+                    if (!em && !pw) { setError("Please enter your email and password."); return; }
+                    if (!em) { setError("Please enter your email address."); return; }
+                    if (!pw) { setError("Please enter your password."); return; }
+                    // Very simple email validation
+                    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { setError("Please enter a valid email address."); return; }
+
+                    // Allowed company accounts by module
+                    const allowedCompany: Record<string, RetailerTeam> = {
+                      'james@xtechsrenewables.com.au': 'sales',
+                      'ashley@xtechsrenewables.com.au': 'on-field',
+                      'liam@xtechsrenewables.com.au': 'on-field',
+                      'neil@xtechsrenewables.com.au': 'project-management',
+                      'paperwork@xtechsrenewables.com.au': 'operations',
+                    };
+                    const isCompany = em.endsWith('@xtechsrenewables.com.au');
+                    if (isCompany && !(em in allowedCompany)) {
+                      setError('Access denied: This company account is not authorized to sign in.');
+                      return;
+                    }
                     if (userType === 'retailer') {
+                      // Enforce team-level restrictions for authorized company users
+                      if (em in allowedCompany && retailerTeam !== allowedCompany[em]) {
+                        setError(`Access denied: This account is restricted to the ${allowedCompany[em].replace('-', ' ')} team.`);
+                        return;
+                      }
                       if (em === 'neil@xtechsrenewables.com.au' && retailerTeam !== 'project-management') {
-                        alert('Access denied: This account is restricted to Project Management team. Please select Project Management to continue.');
+                        setError('Access denied: This account is restricted to Project Management team. Please select Project Management to continue.');
                         return;
                       }
                       if (em === 'james@xtechsrenewables.com.au' && retailerTeam !== 'sales') {
-                        alert('Access denied: This account is restricted to Sales team. Please select Sales Team to continue.');
+                        setError('Access denied: This account is restricted to Sales team. Please select Sales Team to continue.');
                         return;
                       }
                       if (em === 'paperwork@xtechsrenewables.com.au' && retailerTeam !== 'operations') {
-                        alert('Access denied: This account is restricted to Operations team. Please select Operations to continue.');
+                        setError('Access denied: This account is restricted to Operations team. Please select Operations to continue.');
                         return;
                       }
-                      if (em === 'ashely@xtechsrenewables.com.au' && retailerTeam !== 'on-field') {
-                        alert('Access denied: This account is restricted to On-Field team. Please select On-Field to continue.');
+                      if (em === 'ashley@xtechsrenewables.com.au' && retailerTeam !== 'on-field') {
+                        setError('Access denied: This account is restricted to On-Field team. Please select On-Field to continue.');
                         return;
                       }
                       if (em === 'liam@xtechsrenewables.com.au' && retailerTeam !== 'on-field') {
-                        alert('Access denied: This account is restricted to On-Field team. Please select On-Field to continue.');
+                        setError('Access denied: This account is restricted to On-Field team. Please select On-Field to continue.');
                         return;
                       }
                     }
@@ -166,6 +194,9 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
                     Forgot password?
                   </Button>
                 </div>
+                {error && (
+                  <div className="text-destructive text-sm">{error}</div>
+                )}
                 <Button className="w-full" type="submit">Sign In</Button>
                 </form>
               </TabsContent>

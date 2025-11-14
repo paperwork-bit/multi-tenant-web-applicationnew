@@ -346,12 +346,7 @@ export function ResourceManagementScreen() {
       try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
       return next;
     });
-    if (firebaseEnabled && db && target?.docId) {
-      // use update to mark deleted if needed; here we simply remove locally
       applyLocal();
-    } else {
-      applyLocal();
-    }
   };
 
   const handleViewDetails = (resource: Resource) => {

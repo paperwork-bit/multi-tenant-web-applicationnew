@@ -2,8 +2,9 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
-// Read config from env. Keep optional to allow local-only mode if missing
-const firebaseConfig = {
+// Fresh Firebase bootstrap (new project): reads config only from env
+// Provide your new project's web app config via Vite env variables
+const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -12,34 +13,24 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-function hasAllConfig(): boolean {
-  return Boolean(
-    firebaseConfig.apiKey &&
-    firebaseConfig.authDomain &&
-    firebaseConfig.projectId &&
-    firebaseConfig.appId
-  );
+function configLooksValid(): boolean {
+  return Boolean(config.apiKey && config.authDomain && config.projectId && config.appId);
 }
 
-export const app = hasAllConfig()
-  ? (getApps()[0] ?? initializeApp(firebaseConfig))
+export const firebaseApp = configLooksValid()
+  ? (getApps()[0] ?? initializeApp(config))
   : undefined;
 
-export const auth = app ? getAuth(app) : undefined as unknown as ReturnType<typeof getAuth>;
-export const db = app ? getFirestore(app) : undefined as unknown as ReturnType<typeof getFirestore>;
+export const auth = firebaseApp ? getAuth(firebaseApp) : undefined as unknown as ReturnType<typeof getAuth>;
+export const db = firebaseApp ? getFirestore(firebaseApp) : undefined as unknown as ReturnType<typeof getFirestore>;
 
-export const firebaseEnabled = Boolean(app);
+export const firebaseEnabled = Boolean(firebaseApp);
 if (firebaseEnabled) {
-  // Minimal safe log to verify env is wired
   // eslint-disable-next-line no-console
-  console.log('[Firebase] Enabled with project:', firebaseConfig.projectId);
+  console.log('[Firebase] Connected to project:', config.projectId);
 } else {
   // eslint-disable-next-line no-console
-  console.warn('[Firebase] Disabled. Missing config:', {
-    hasApiKey: Boolean(firebaseConfig.apiKey),
-    hasAuthDomain: Boolean(firebaseConfig.authDomain),
-    hasProjectId: Boolean(firebaseConfig.projectId),
-    hasAppId: Boolean(firebaseConfig.appId),
-  });
+  console.warn('[Firebase] Not initialized. Missing or invalid env configuration.');
 }
+
 

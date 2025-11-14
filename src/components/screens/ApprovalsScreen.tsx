@@ -65,12 +65,16 @@ interface JobSubmission {
 interface Reimbursement {
   id: number;
   employeeName: string;
+  employeeEmail?: string;
   category: string;
   amount: number;
   description: string;
   receiptAttached: boolean;
   submittedOn: string;
   status: "pending" | "approved" | "rejected";
+  projectId?: string;
+  projectName?: string;
+  reviewerComment?: string;
 }
 
 export function ApprovalsScreen() {
@@ -98,7 +102,7 @@ export function ApprovalsScreen() {
   const discountRequests: DiscountRequest[] = [];
   const jobSubmissions: JobSubmission[] = [];
 
-  const reimbursements: Reimbursement[] = [];
+  const [reimbursements, setReimbursements] = useState<Reimbursement[]>([]);
 
   // Attendance edit approvals (from AttendanceScreen)
   interface AttendanceApproval {
@@ -129,11 +133,18 @@ export function ApprovalsScreen() {
       setAttendanceApprovals([]);
     }
     try {
+      const rawReimbursements = localStorage.getItem('xtr_reimbursement_requests');
+      const parsedReimbursements = rawReimbursements ? JSON.parse(rawReimbursements) : [];
+      setReimbursements(parsedReimbursements);
+    } catch {
+      setReimbursements([]);
+    }
+    try {
       const rawLeaves = localStorage.getItem('xtr_leave_approvals');
       const parsed = rawLeaves ? JSON.parse(rawLeaves) : [];
       const mapDept = (email: string, fallback: string) => {
         const em = String(email || '').toLowerCase();
-        if (em === 'ashely@xtechsrenewables.com.au') return 'On-Field';
+        if (em === 'ashley@xtechsrenewables.com.au') return 'On-Field';
         if (em === 'liam@xtechsrenewables.com.au') return 'On-Field';
         if (em === 'james@xtechsrenewables.com.au') return 'Sales';
         if (em === 'neil@xtechsrenewables.com.au') return 'Project Management';
@@ -153,7 +164,7 @@ export function ApprovalsScreen() {
   useEffect(() => {
     loadApprovals();
     const onStorage = (e: StorageEvent) => {
-      if (!e.key || e.key === "xtr_attendance_approvals") loadApprovals();
+      if (!e.key || e.key === "xtr_attendance_approvals" || e.key === "xtr_reimbursement_requests" || e.key === "xtr_leave_approvals") loadApprovals();
     };
     const onCustom = () => loadApprovals();
     window.addEventListener('storage', onStorage);
@@ -265,6 +276,17 @@ export function ApprovalsScreen() {
       } : l);
       persistLeaves(next);
       try { window.dispatchEvent(new Event('xtr-approvals-updated')); } catch {}
+    } else if (currentApproval.type === 'reimbursement') {
+      const next = reimbursements.map(r => r.id === currentApproval.item.id ? {
+        ...r,
+        status: approvalType === 'approve' ? 'approved' : 'rejected',
+        reviewerComment: comments.trim() || r.reviewerComment,
+      } : r);
+      setReimbursements(next);
+      try {
+        localStorage.setItem('xtr_reimbursement_requests', JSON.stringify(next));
+        window.dispatchEvent(new Event('xtr-approvals-updated'));
+      } catch {}
     }
     setShowApprovalDialog(false);
   };
@@ -825,21 +847,19 @@ export function ApprovalsScreen() {
                     <Receipt className="w-5 h-5 text-accent" />
                     <div>
                       <CardTitle>{reimb.employeeName}</CardTitle>
-                      <p className="text-muted-foreground">{reimb.category}</p>
+                      <p className="text-muted-foreground">
+                        {reimb.employeeRole || (reimb.employeeEmail && reimb.employeeEmail)}
+                      </p>
                     </div>
                   </div>
                   {getStatusBadge(reimb.status)}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <p className="text-muted-foreground">Amount</p>
                     <p className="text-2xl">${reimb.amount.toFixed(2)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Category</p>
-                    <p>{reimb.category}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">Receipt</p>
@@ -858,6 +878,13 @@ export function ApprovalsScreen() {
                   <p className="text-muted-foreground">Description</p>
                   <p>{reimb.description}</p>
                 </div>
+
+                {reimb.projectName && (
+                  <div>
+                    <p className="text-muted-foreground">Project</p>
+                    <p>{reimb.projectName}</p>
+                  </div>
+                )}
 
                 <div className="text-muted-foreground">
                   Submitted on {new Date(reimb.submittedOn).toLocaleDateString()}
@@ -1401,6 +1428,12 @@ export function ApprovalsScreen() {
                         <p className="text-sm text-gray-600">Employee Name</p>
                         <p className="font-medium">{selectedItem.employeeName}</p>
                       </div>
+                      {selectedItem.employeeEmail && (
+                        <div>
+                          <p className="text-sm text-gray-600">Email</p>
+                          <p className="font-medium break-all">{selectedItem.employeeEmail}</p>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
@@ -1409,15 +1442,9 @@ export function ApprovalsScreen() {
                       <CardTitle className="text-lg">Expense Details</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm text-gray-600">Category</p>
-                          <p className="font-medium">{selectedItem.category}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Amount</p>
-                          <p className="text-2xl font-bold text-green-600">${selectedItem.amount.toFixed(2)}</p>
-                        </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Amount</p>
+                        <p className="text-2xl font-bold text-green-600">${selectedItem.amount.toFixed(2)}</p>
                       </div>
                       <div>
                         <p className="text-sm text-gray-600">Description</p>

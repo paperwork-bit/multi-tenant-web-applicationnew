@@ -402,7 +402,7 @@ export function AttendanceScreen({ userEmail, department }: { userEmail?: string
 
     const overrideDept = (() => {
       const em = String(userEmail || '').toLowerCase();
-      if (em === 'ashely@xtechsrenewables.com.au') return 'On-Field';
+      if (em === 'ashley@xtechsrenewables.com.au') return 'On-Field';
       if (em === 'liam@xtechsrenewables.com.au') return 'On-Field';
       if (em === 'james@xtechsrenewables.com.au') return 'Sales';
       if (em === 'neil@xtechsrenewables.com.au') return 'Project Management';

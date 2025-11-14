@@ -1,19 +1,21 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { db, firebaseEnabled } from "../../lib/firebase";
+import { addDoc, collection, onSnapshot } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { FileUploader } from "../FileUploader";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
-import { FileUploader } from "../FileUploader";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Checkbox } from "../ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { ArrowLeft, Save, Sparkles, MapPin, Camera, CheckSquare, Calendar as CalendarIcon, Plus, X, Download, Upload, Eye, Edit, Trash2, Phone, Mail, Clock, DollarSign, Zap, Home, Building, Car, Battery, Sun, Wind, Droplets, Thermometer, Lightbulb, Wifi, Shield, CheckCircle, AlertCircle, Star, Filter, Search, MoreHorizontal, Settings, Bell, BellOff, Heart, Share, Bookmark, Flag, MessageSquare, Send, Copy, ExternalLink, ArrowRight, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, FileText, Image, Video, Music, File, Folder, FolderOpen, Archive, Trash, Lock, Unlock, Key, UserCheck, UserX, UserPlus, UserMinus, Users, ThumbsUp, ThumbsDown, BookmarkCheck, Tag, Tags, Hash, AtSign, Percent, Plus as PlusIcon, Minus, Divide, X as XIcon, Equal, NotEqual, GreaterThan, LessThan, GreaterThanOrEqual, LessThanOrEqual, Infinity, Pi, Sigma, Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Eta, Theta, Iota, Kappa, Lambda, Mu, Nu, Xi, Omicron, Rho, Tau, Upsilon, Phi, Chi, Psi, Omega, Wrench, HardHat, ClipboardList, AlertTriangle } from "lucide-react";
+import { Save, MapPin, Camera, CheckSquare, Calendar as CalendarIcon, Download, Phone, Shield, CheckCircle, AlertTriangle, Users, Wrench, HardHat, ClipboardList, Zap, Home, FileText } from "lucide-react";
 
-export function OnFieldSiteVisitScreen() {
-  const [formData, setFormData] = useState({
+// Initial form state - reusable for resetting
+const initialFormState = {
     // Customer Information (from Sales Call)
     customerName: "",
     customerEmail: "",
@@ -31,8 +33,8 @@ export function OnFieldSiteVisitScreen() {
     roofType: "",
     meterPhase: "",
     numberOfStory: "",
-    shadingAssessment: [],
-    primaryMotivation: [],
+  shadingAssessment: [] as string[],
+  primaryMotivation: [] as string[],
     existingSolarInstallations: "",
     interestLevel: "",
     
@@ -46,9 +48,9 @@ export function OnFieldSiteVisitScreen() {
     weatherConditions: "",
     
     // Safety Assessment
-    safetyHazards: [],
+  safetyHazards: [] as string[],
     safetyNotes: "",
-    ppeRequired: [],
+  ppeRequired: [] as string[],
     emergencyContacts: "",
     
     // Electrical Assessment
@@ -56,21 +58,19 @@ export function OnFieldSiteVisitScreen() {
     panelCondition: "",
     availableAmperage: "",
     groundingSystem: "",
-    electricalHazards: [],
+  electricalHazards: [] as string[],
     electricalNotes: "",
     
     // Roof Assessment
-    roofType: "",
     roofCondition: "",
     roofAccess: "",
     structuralIntegrity: "",
-    mountingPoints: [],
-    roofHazards: [],
+  mountingPoints: [] as string[],
+  roofHazards: [] as string[],
     roofNotes: "",
     
     // Installation Requirements
     panelCount: "",
-    panelType: "",
     inverterLocation: "",
     conduitPath: "",
     mountingSystem: "",
@@ -95,7 +95,154 @@ export function OnFieldSiteVisitScreen() {
     generalNotes: "",
     recommendations: "",
     nextSteps: "",
-  });
+};
+
+export function OnFieldSiteVisitScreen() {
+  const [formData, setFormData] = useState(initialFormState);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+
+  // Check on mount if assessment already exists for current lead
+  useEffect(() => {
+    try {
+      const ctxRaw = localStorage.getItem('xtr_onfield_context');
+      const ctx = ctxRaw ? JSON.parse(ctxRaw) : {};
+      const leadId = ctx?.leadId;
+      if (leadId) {
+        const assessments = JSON.parse(localStorage.getItem('xtr_onfield_assessments') || '[]');
+        const existingAssessment = Array.isArray(assessments) && assessments.find((a: any) => a.leadId === leadId);
+        if (existingAssessment) {
+          // Assessment already exists, don't prefill and mark as submitted
+          setHasSubmitted(true);
+          setFormData(initialFormState);
+        }
+      }
+    } catch {}
+  }, []);
+
+  // Prefill from Leads CRM when status moved to On-Field Inspection
+  useEffect(() => {
+    // Don't prefill if form was just submitted
+    if (hasSubmitted) return;
+    
+    try {
+      const raw = localStorage.getItem('xtr_onfield_prefill');
+      if (!raw) return;
+      const pre = JSON.parse(raw) || {};
+      
+      // Check if assessment already exists for this lead
+      const ctxRaw = localStorage.getItem('xtr_onfield_context');
+      const ctx = ctxRaw ? JSON.parse(ctxRaw) : {};
+      const leadId = ctx?.leadId;
+      if (leadId) {
+        try {
+          const assessments = JSON.parse(localStorage.getItem('xtr_onfield_assessments') || '[]');
+          const existingAssessment = Array.isArray(assessments) && assessments.find((a: any) => a.leadId === leadId);
+          if (existingAssessment) {
+            // Assessment already exists, don't prefill
+            return;
+          }
+        } catch {}
+      }
+      
+      setFormData(prev => ({
+        ...prev,
+        customerName: pre.customerName || prev.customerName,
+        customerEmail: pre.customerEmail || prev.customerEmail,
+        customerPhone: pre.customerPhone || prev.customerPhone,
+        propertyAddress: pre.propertyAddress || prev.propertyAddress,
+        propertyType: pre.propertyType || prev.propertyType,
+        currentEnergyProvider: pre.currentEnergyProvider || prev.currentEnergyProvider,
+        energyDistributor: pre.energyDistributor || prev.energyDistributor,
+        averageMonthlyBill: pre.averageMonthlyBill || prev.averageMonthlyBill,
+        roofOrientation: pre.roofOrientation || prev.roofOrientation,
+        roofType: pre.roofType || prev.roofType,
+        meterPhase: pre.meterPhase || prev.meterPhase,
+        numberOfStory: pre.numberOfStory || prev.numberOfStory,
+        shadingAssessment: Array.isArray(pre.shadingAssessment) ? pre.shadingAssessment : prev.shadingAssessment,
+        primaryMotivation: Array.isArray(pre.primaryMotivation) ? pre.primaryMotivation : prev.primaryMotivation,
+        existingSolarInstallations: pre.existingSolarInstallations || prev.existingSolarInstallations,
+        interestLevel: pre.interestLevel || prev.interestLevel,
+        salesNotes: pre.salesNotes || prev.salesNotes,
+      }));
+      // leave the prefill in storage so techs can refresh without losing
+    } catch {}
+  }, [hasSubmitted]);
+
+  // Always derive from leads_state using context lead id to ensure fresh data
+  useEffect(() => {
+    // Don't prefill if form was just submitted
+    if (hasSubmitted) return;
+    
+    try {
+      const ctxRaw = localStorage.getItem('xtr_onfield_context');
+      const ctx = ctxRaw ? JSON.parse(ctxRaw) : null;
+      const leadId = ctx?.leadId;
+      if (!leadId) return;
+      
+      // Check if assessment already exists for this lead
+      try {
+        const assessments = JSON.parse(localStorage.getItem('xtr_onfield_assessments') || '[]');
+        const existingAssessment = Array.isArray(assessments) && assessments.find((a: any) => a.leadId === leadId);
+        if (existingAssessment) {
+          // Assessment already exists, don't prefill
+          return;
+        }
+      } catch {}
+      
+      const boardRaw = localStorage.getItem('xtr_leads_state_columns');
+      const board = boardRaw ? JSON.parse(boardRaw) : null;
+      const columns = Array.isArray(board?.columns) ? board.columns : Array.isArray(board) ? board : [];
+      let found: any = null;
+      columns.forEach((col: any) => {
+        (col?.leads || []).forEach((l: any) => { if (String(l.id) === String(leadId)) found = l; });
+      });
+      if (!found) return;
+      const snap = found.projectSnapshot || {};
+      let sv = found.siteVisit || {};
+      // If siteVisit not attached on the lead, try to resolve from submitted visits store
+      if (!sv || Object.keys(sv).length === 0) {
+        try {
+          const rawSV = localStorage.getItem('xtr_site_visits');
+          const arr = rawSV ? JSON.parse(rawSV) : [];
+          const name = snap.customerName || found.title;
+          const addr = snap.customerAddress || found.company;
+          if (Array.isArray(arr)) {
+            const matches = arr.filter((v: any) => (
+              (!name || v.customerName === name) && (!addr || v.propertyAddress === addr)
+            ));
+            if (matches.length > 0) {
+              matches.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+              sv = matches[0];
+            }
+          }
+        } catch {}
+      }
+      const salesNotesParts: string[] = [];
+      if (sv.siteNotes) salesNotesParts.push(`• ${sv.siteNotes}`);
+      if (sv.specialRequirements) salesNotesParts.push(`• ${sv.specialRequirements}`);
+      if (sv.nextSteps) salesNotesParts.push(`• ${sv.nextSteps}`);
+      setFormData(prev => ({
+        ...prev,
+        customerName: snap.customerName || found.title || prev.customerName,
+        customerEmail: snap.customerEmail || (found.tags && found.tags[0]) || prev.customerEmail,
+        customerPhone: snap.customerPhone || found.value || prev.customerPhone,
+        propertyAddress: snap.customerAddress || found.company || prev.propertyAddress,
+        propertyType: snap.clientType || prev.propertyType,
+        currentEnergyProvider: snap.utilityInfo?.energyRetailer || sv.currentEnergyProvider || prev.currentEnergyProvider,
+        energyDistributor: snap.utilityInfo?.distributor || sv.energyDistributor || prev.energyDistributor,
+        averageMonthlyBill: sv.averageMonthlyBill || prev.averageMonthlyBill,
+        roofOrientation: sv.roofOrientation || prev.roofOrientation,
+        roofType: snap.propertyInfo?.roofType || sv.roofType || prev.roofType,
+        meterPhase: snap.propertyInfo?.meterPhase || prev.meterPhase,
+        numberOfStory: snap.propertyInfo?.houseStorey || prev.numberOfStory,
+        shadingAssessment: (snap.siteVisitInfo?.shadingAssessment) || (Array.isArray(sv.shadingAssessment) ? sv.shadingAssessment : prev.shadingAssessment),
+        primaryMotivation: (snap.siteVisitInfo?.primaryMotivation) || (Array.isArray(sv.primaryMotivation) ? sv.primaryMotivation : prev.primaryMotivation),
+        existingSolarInstallations: snap.siteVisitInfo?.existingSolarInstallations || sv.existingSolarInstallations || prev.existingSolarInstallations,
+        interestLevel: snap.siteVisitInfo?.interestLevel || sv.interestLevel || prev.interestLevel,
+        salesNotes: salesNotesParts.join('\n') || prev.salesNotes,
+      }));
+    } catch {}
+  }, [hasSubmitted]);
 
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({
@@ -122,10 +269,149 @@ export function OnFieldSiteVisitScreen() {
     }));
   };
 
+  const [drafts, setDrafts] = useState<any[]>([]);
+  const [assessments, setAssessments] = useState<any[]>([]);
+  const [showViewDialog, setShowViewDialog] = useState(false);
+  const [viewRecord, setViewRecord] = useState<any | null>(null);
+  const [isEditingDraft, setIsEditingDraft] = useState<any | null>(null);
+  const [technicians, setTechnicians] = useState<string[]>([]);
+
+  const normalizeForView = (rec: any) => {
+    const toDisplay = (val: any): any => {
+      if (val === null || val === undefined) return '';
+      const t = typeof val;
+      if (t === 'string' || t === 'number' || t === 'boolean') return String(val);
+      if (Array.isArray(val)) return val.map((v) => toDisplay(v));
+      if (t === 'object') {
+        if ('name' in (val as any) && typeof (val as any).name === 'string') return (val as any).name;
+        try { return JSON.stringify(val); } catch { return String(val); }
+      }
+      return String(val);
+    };
+    const out: any = {};
+    Object.keys(rec || {}).forEach((k) => { out[k] = toDisplay(rec[k]); });
+    return out;
+  };
+
+  useEffect(() => {
+    try {
+      const d = localStorage.getItem('xtr_onfield_drafts');
+      setDrafts(d ? JSON.parse(d) : []);
+    } catch { setDrafts([]); }
+    try {
+      const s = localStorage.getItem('xtr_onfield_assessments');
+      setAssessments(s ? JSON.parse(s) : []);
+    } catch { setAssessments([]); }
+    // Load resources for technician names
+    try {
+      const rawRes = localStorage.getItem('xtr_resources');
+      const resources = rawRes ? JSON.parse(rawRes) : [];
+      if (Array.isArray(resources)) {
+        const names = resources
+          .filter((r: any) => (r?.status || 'active') === 'active')
+          .map((r: any) => (typeof r?.name === 'string' ? r.name : undefined))
+          .filter((n: any) => typeof n === 'string' && n.trim().length > 0) as string[];
+        setTechnicians(names);
+      }
+    } catch { setTechnicians([]); }
+  }, []);
+
+  // Cross-device: subscribe to assessments from Firestore and merge with local
+  useEffect(() => {
+    const loadLocal = () => {
+      try {
+        const s = localStorage.getItem('xtr_onfield_assessments');
+        setAssessments(s ? JSON.parse(s) : []);
+      } catch { setAssessments([]); }
+    };
+    loadLocal();
+    const onStorage = (e: StorageEvent) => { if (e.key === 'xtr_onfield_assessments') loadLocal(); };
+    window.addEventListener('storage', onStorage);
+    let unsub: (() => void) | undefined;
+    if (firebaseEnabled && db) {
+      try {
+        unsub = onSnapshot(collection(db, 'onfield_site_visits'), (snap) => {
+          const arr = snap.docs.map((d) => d.data());
+          if (Array.isArray(arr)) setAssessments(arr as any);
+        });
+      } catch {}
+    }
+    return () => { window.removeEventListener('storage', onStorage); if (typeof unsub === 'function') unsub(); };
+  }, []);
+
+  const saveDraft = () => {
+    const ctxRaw = localStorage.getItem('xtr_onfield_context');
+    const ctx = ctxRaw ? JSON.parse(ctxRaw) : {};
+    const draft = { id: `OFD-${Date.now()}`, leadId: ctx.leadId, updatedAt: new Date().toISOString(), ...formData };
+    try {
+      const prev = JSON.parse(localStorage.getItem('xtr_onfield_drafts') || '[]');
+      let next = Array.isArray(prev) ? prev : [];
+      if (isEditingDraft) {
+        next = next.map((d: any) => d.id === isEditingDraft.id ? draft : d);
+        setIsEditingDraft(null);
+      } else {
+        next = [draft, ...next];
+      }
+      localStorage.setItem('xtr_onfield_drafts', JSON.stringify(next));
+      setDrafts(next);
+      alert('Draft saved');
+    } catch {}
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("On-Field Site Visit Form submitted:", formData);
-    alert("On-Field Site Visit form submitted successfully!");
+    const ctxRaw = localStorage.getItem('xtr_onfield_context');
+    const ctx = ctxRaw ? JSON.parse(ctxRaw) : {};
+    const record = { id: `OF-${Date.now()}`, leadId: ctx.leadId, createdAt: new Date().toISOString(), ...formData };
+    try {
+      const prev = JSON.parse(localStorage.getItem('xtr_onfield_assessments') || '[]');
+      const next = Array.isArray(prev) ? [record, ...prev] : [record];
+      localStorage.setItem('xtr_onfield_assessments', JSON.stringify(next));
+      setAssessments(next);
+    } catch {}
+    // Also persist to Firestore for PM visibility across devices
+    try {
+      if (firebaseEnabled && db) {
+        addDoc(collection(db, 'onfield_site_visits'), record).catch(() => {});
+      }
+    } catch {}
+    // Remove drafts for this lead (covers both edited-draft and submit-from-return flows)
+    try {
+      const prevDrafts = JSON.parse(localStorage.getItem('xtr_onfield_drafts') || '[]');
+      const filtered = Array.isArray(prevDrafts) ? prevDrafts.filter((d: any) => d.leadId !== ctx.leadId) : [];
+      localStorage.setItem('xtr_onfield_drafts', JSON.stringify(filtered));
+      setDrafts(filtered);
+      setIsEditingDraft(null);
+    } catch {}
+    try { localStorage.setItem('xtr_pending_onfield', JSON.stringify({ leadId: ctx.leadId, assessment: record })); } catch {}
+    try { window.dispatchEvent(new CustomEvent('xtr-leads-attach-onfield', { detail: { leadId: ctx.leadId, assessment: record } })); } catch {}
+    
+    // Clear the form after successful submission
+    setFormData({
+      ...initialFormState,
+      // Reset checklist to initial state
+      checklist: [
+        { id: 1, item: "Site safety assessment completed", checked: false },
+        { id: 2, item: "Electrical panel inspection done", checked: false },
+        { id: 3, item: "Roof condition verified", checked: false },
+        { id: 4, item: "Structural assessment completed", checked: false },
+        { id: 5, item: "Access routes identified", checked: false },
+        { id: 6, item: "Utility connections verified", checked: false },
+        { id: 7, item: "Permit requirements checked", checked: false },
+        { id: 8, item: "Customer expectations discussed", checked: false },
+      ],
+    });
+    
+    // Clear prefill data and context after submission
+    try {
+      localStorage.removeItem('xtr_onfield_prefill');
+      localStorage.removeItem('xtr_onfield_context');
+    } catch {}
+    
+    // Set flag to prevent repopulation
+    setHasSubmitted(true);
+    
+    alert("On-Field Site Assessment submitted successfully!");
   };
 
   const handleExportForm = () => {
@@ -140,7 +426,7 @@ export function OnFieldSiteVisitScreen() {
       ["Property Type", formData.propertyType],
       
       // Energy Information (from Sales Call)
-      ["Current Energy Provider", formData.currentEnergyProvider],
+      ["Energy Retailer", formData.currentEnergyProvider],
       ["Energy Distributor", formData.energyDistributor],
       ["Average Monthly Bill", formData.averageMonthlyBill],
       ["Roof Orientation", formData.roofOrientation],
@@ -148,7 +434,7 @@ export function OnFieldSiteVisitScreen() {
       // Property Assessment (from Sales Call)
       ["Roof Type", formData.roofType],
       ["Meter Phase", formData.meterPhase],
-      ["Number of Story", formData.numberOfStory],
+      ["Number of Storey", formData.numberOfStory],
       ["Shading Assessment", formData.shadingAssessment.join(", ")],
       ["Primary Motivation", formData.primaryMotivation.join(", ")],
       ["Existing Solar Installations", formData.existingSolarInstallations],
@@ -188,11 +474,10 @@ export function OnFieldSiteVisitScreen() {
       
       // Installation Requirements
       ["Panel Count", formData.panelCount],
-      ["Panel Type", formData.panelType],
       ["Inverter Location", formData.inverterLocation],
       ["Conduit Path", formData.conduitPath],
-      ["Mounting System", formData.mountingSystem],
       ["Special Requirements", formData.specialRequirements],
+      ["Photos", Array.isArray(formData.photos) ? formData.photos.join(", ") : ""],
       
       // Checklist
       ...formData.checklist.map(item => [item.item, item.checked ? "Yes" : "No"]),
@@ -230,6 +515,10 @@ export function OnFieldSiteVisitScreen() {
               <Button variant="outline" onClick={handleExportForm}>
                 <Download className="w-4 h-4 mr-2" />
                 Export Report
+              </Button>
+              <Button variant="outline" onClick={saveDraft}>
+                <Save className="w-4 h-4 mr-2" />
+                Save Draft
               </Button>
               <Button onClick={handleSubmit}>
                 <Save className="w-4 h-4 mr-2" />
@@ -312,7 +601,78 @@ export function OnFieldSiteVisitScreen() {
                   </div>
                 </CardContent>
               </Card>
-
+      {/* View Dialog */}
+      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>On-Field Assessment</DialogTitle>
+          </DialogHeader>
+          {viewRecord && (
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Visit Date</Label>
+                  <p>{viewRecord.visitDate || '-'}</p>
+                </div>
+                <div>
+                  <Label>Visit Time</Label>
+                  <p>{viewRecord.visitTime || '-'}</p>
+                </div>
+                <div>
+                  <Label>Technician</Label>
+                  <p>{viewRecord.technicianName || '-'}</p>
+                </div>
+                <div>
+                  <Label>Weather</Label>
+                  <p>{viewRecord.weatherConditions || '-'}</p>
+                </div>
+              </div>
+              <div>
+                <p className="font-medium mb-2">Electrical Assessment</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label>Main Panel Location</Label><p>{viewRecord.mainPanelLocation || '-'}</p></div>
+                  <div><Label>Panel Condition</Label><p>{viewRecord.panelCondition || '-'}</p></div>
+                  <div><Label>Available Amperage</Label><p>{viewRecord.availableAmperage || '-'}</p></div>
+                  <div><Label>Grounding System</Label><p>{viewRecord.groundingSystem || '-'}</p></div>
+                </div>
+                <div className="mt-2"><Label>Electrical Hazards</Label><p>{Array.isArray(viewRecord.electricalHazards) && viewRecord.electricalHazards.length ? viewRecord.electricalHazards.join(', ') : '-'}</p></div>
+                <div className="mt-2"><Label>Electrical Notes</Label><p>{viewRecord.electricalNotes || '-'}</p></div>
+              </div>
+              <div>
+                <p className="font-medium mb-2">Roof Assessment</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label>Roof Type</Label><p>{viewRecord.roofType || '-'}</p></div>
+                  <div><Label>Roof Condition</Label><p>{viewRecord.roofCondition || '-'}</p></div>
+                  <div><Label>Roof Access</Label><p>{viewRecord.roofAccess || '-'}</p></div>
+                  <div><Label>Structural Integrity</Label><p>{viewRecord.structuralIntegrity || '-'}</p></div>
+                </div>
+                <div className="mt-2"><Label>Mounting Points</Label><p>{Array.isArray(viewRecord.mountingPoints) && viewRecord.mountingPoints.length ? viewRecord.mountingPoints.join(', ') : '-'}</p></div>
+                <div className="mt-2"><Label>Roof Hazards</Label><p>{Array.isArray(viewRecord.roofHazards) && viewRecord.roofHazards.length ? viewRecord.roofHazards.join(', ') : '-'}</p></div>
+                <div className="mt-2"><Label>Roof Notes</Label><p>{viewRecord.roofNotes || '-'}</p></div>
+              </div>
+              <div>
+                <p className="font-medium mb-2">Installation Requirements</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label>Panel Count</Label><p>{viewRecord.panelCount || '-'}</p></div>
+                  <div><Label>Inverter Location</Label><p>{viewRecord.inverterLocation || '-'}</p></div>
+                  <div><Label>Conduit Path</Label><p>{viewRecord.conduitPath || '-'}</p></div>
+                </div>
+                <div className="mt-2"><Label>Special Requirements</Label><p>{viewRecord.specialRequirements || '-'}</p></div>
+              </div>
+              <div>
+                <p className="font-medium mb-2">Photos</p>
+                {Array.isArray(viewRecord.photos) && viewRecord.photos.length ? (
+                  <ul className="list-disc pl-5 space-y-1">
+                    {viewRecord.photos.map((n: string, i: number) => <li key={i}>{n}</li>)}
+                  </ul>
+                ) : (
+                  <p className="text-muted-foreground">No photos uploaded.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
               {/* Energy Information (from Sales Call) */}
               <Card>
                 <CardHeader>
@@ -324,7 +684,7 @@ export function OnFieldSiteVisitScreen() {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="currentEnergyProvider">Current Energy Provider</Label>
+                      <Label htmlFor="currentEnergyProvider">Energy Retailer</Label>
                       <Input
                         id="currentEnergyProvider"
                         value={formData.currentEnergyProvider}
@@ -404,7 +764,7 @@ export function OnFieldSiteVisitScreen() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="numberOfStory">Number of Story</Label>
+                      <Label htmlFor="numberOfStory">Number of Storey</Label>
                       <Input
                         id="numberOfStory"
                         value={formData.numberOfStory}
@@ -515,12 +875,20 @@ export function OnFieldSiteVisitScreen() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="technicianName">Technician Name</Label>
-                      <Input
-                        id="technicianName"
-                        value={formData.technicianName}
-                        onChange={(e) => handleInputChange("technicianName", e.target.value)}
-                        placeholder="Enter technician name"
-                      />
+                      {technicians.length === 0 ? (
+                        <Input id="technicianName" value={formData.technicianName || ""} readOnly placeholder="No resources found" />
+                      ) : (
+                        <Select value={formData.technicianName || undefined} onValueChange={(value) => handleInputChange("technicianName", value)}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select technician" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {technicians.map((name) => (
+                              <SelectItem key={name} value={name}>{name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -568,7 +936,9 @@ export function OnFieldSiteVisitScreen() {
                           <Checkbox
                             id={`safety-${hazard}`}
                             checked={formData.safetyHazards.includes(hazard)}
-                            onCheckedChange={(checked) => handleArrayChange("safetyHazards", hazard, checked as boolean)}
+                            onCheckedChange={(checked: boolean) =>
+                              handleArrayChange("safetyHazards", hazard, checked)
+                            }
                           />
                           <Label htmlFor={`safety-${hazard}`} className="text-sm">{hazard}</Label>
                         </div>
@@ -729,19 +1099,14 @@ export function OnFieldSiteVisitScreen() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="roofType">Roof Type</Label>
-                      <Select value={formData.roofType} onValueChange={(value) => handleInputChange("roofType", value)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select roof type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="tile">Tile</SelectItem>
-                          <SelectItem value="metal">Metal</SelectItem>
-                          <SelectItem value="shingle">Shingle</SelectItem>
-                          <SelectItem value="flat">Flat</SelectItem>
-                          <SelectItem value="slate">Slate</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Input
+                        id="roofType"
+                        value={formData.roofType}
+                        onChange={(e) => handleInputChange("roofType", e.target.value)}
+                        placeholder="Roof type from sales call"
+                        className="bg-gray-50"
+                        readOnly
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="roofCondition">Roof Condition</Label>
@@ -870,20 +1235,6 @@ export function OnFieldSiteVisitScreen() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="panelType">Panel Type</Label>
-                      <Select value={formData.panelType} onValueChange={(value) => handleInputChange("panelType", value)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select panel type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="monocrystalline">Monocrystalline</SelectItem>
-                          <SelectItem value="polycrystalline">Polycrystalline</SelectItem>
-                          <SelectItem value="thin-film">Thin Film</SelectItem>
-                          <SelectItem value="bifacial">Bifacial</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
                       <Label htmlFor="inverterLocation">Inverter Location</Label>
                       <Input
                         id="inverterLocation"
@@ -900,20 +1251,6 @@ export function OnFieldSiteVisitScreen() {
                         onChange={(e) => handleInputChange("conduitPath", e.target.value)}
                         placeholder="Describe conduit routing"
                       />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="mountingSystem">Mounting System</Label>
-                      <Select value={formData.mountingSystem} onValueChange={(value) => handleInputChange("mountingSystem", value)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select mounting system" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="roof-mounted">Roof Mounted</SelectItem>
-                          <SelectItem value="ground-mounted">Ground Mounted</SelectItem>
-                          <SelectItem value="pole-mounted">Pole Mounted</SelectItem>
-                          <SelectItem value="tracking">Tracking System</SelectItem>
-                        </SelectContent>
-                      </Select>
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -939,73 +1276,73 @@ export function OnFieldSiteVisitScreen() {
                 </CardHeader>
                 <CardContent>
                   <FileUploader
-                    onFilesChange={(files) => handleInputChange("photos", files)}
-                    acceptedFileTypes="image/*"
+                    onFilesChange={(files) => handleInputChange("photos", files.map(f => f.name))}
+                    accept="image/*"
                     maxFiles={10}
                   />
                 </CardContent>
               </Card>
 
+
             </form>
+
+            {/* Drafts Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Saved Drafts</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {drafts.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No drafts yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {drafts.map((d) => (
+                      <div key={d.id} className="flex items-center justify-between border rounded p-3">
+                        <div className="text-sm">
+                          <div className="font-medium">{d.customerName || '-'}</div>
+                          <div className="text-muted-foreground">Updated {new Date(d.updatedAt).toLocaleString()}</div>
+                </div>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => { setViewRecord(normalizeForView(d)); setShowViewDialog(true); }}>View</Button>
+                          <Button variant="outline" size="sm" onClick={() => { setFormData(d); setIsEditingDraft(d); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Edit</Button>
+                </div>
+                </div>
+                    ))}
+                </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Submitted Assessments Table */}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Submitted On-Field Assessments</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {assessments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No submissions yet.</p>
+                ) : (
+                  <div className="space-y-2 max-h-[480px] overflow-y-auto">
+                    {assessments.map((a) => (
+                      <div key={a.id} className="flex items-center justify-between border rounded p-3">
+                        <div className="text-sm">
+                          <div className="font-medium">{a.customerName || '-'}</div>
+                          <div className="text-muted-foreground">Created {new Date(a.createdAt).toLocaleString()}</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => { setViewRecord(normalizeForView(a)); setShowViewDialog(true); }}>View</Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
           {/* Right Sidebar */}
           <div className="space-y-6">
-            {/* Sales Data Integration Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-blue-600">
-                  <Users className="w-5 h-5" />
-                  Sales Data Integration
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
-                  <span>Customer information pre-populated from sales call</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
-                  <span>Energy and property data from sales assessment</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
-                  <span>Sales notes and observations included</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
-                  <span>Focus on technical installation requirements</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Quick Actions */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <HardHat className="w-5 h-5" />
-                  Quick Actions
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Button variant="outline" className="w-full justify-start">
-                  <ClipboardList className="w-4 h-4 mr-2" />
-                  Generate Work Order
-                </Button>
-                <Button variant="outline" className="w-full justify-start">
-                  <AlertTriangle className="w-4 h-4 mr-2" />
-                  Report Safety Issue
-                </Button>
-                <Button variant="outline" className="w-full justify-start">
-                  <Phone className="w-4 h-4 mr-2" />
-                  Contact Supervisor
-                </Button>
-                <Button variant="outline" className="w-full justify-start">
-                  <MapPin className="w-4 h-4 mr-2" />
-                  Get Directions
-                </Button>
-              </CardContent>
-            </Card>
+            
 
             {/* Safety Reminders */}
             <Card>

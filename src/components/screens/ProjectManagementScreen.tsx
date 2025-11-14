@@ -1,236 +1,287 @@
-import React, { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../ui/dialog";
+import { Card } from "../ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { Checkbox } from "../ui/checkbox";
 import { Textarea } from "../ui/textarea";
-import { KanbanCard } from "../KanbanCard";
-import { Calendar as CalendarIcon, Users, Clock, ChevronLeft, ChevronRight, ChevronDown, Plus, CheckCircle, AlertCircle, DollarSign, BarChart3, Edit, Trash2, Eye, Download, Upload, X, MessageSquare, Phone, MapPin } from "lucide-react";
-import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
+import { Checkbox } from "../ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { Calendar, ChevronLeft, ChevronRight, Download, Plus, Edit, Trash2, X, Save, ChevronDown, MessageSquare, RefreshCw } from "lucide-react";
+import { db, firebaseEnabled } from "../../lib/firebase";
+import { collection, onSnapshot, addDoc, setDoc, doc, query, where, getDocs, deleteDoc } from "firebase/firestore";
 
-const fallbackAssigneeOptions = [
-  "Sarah Johnson",
-  "Mike Chen",
-  "Emily Davis",
-  "James Wilson",
-  "Lisa Anderson",
-  "Team A",
-  "Team B",
-  "Team C",
+// Types
+type Priority = "low" | "medium" | "high";
+type ProjectType = "Residential" | "Commercial" | "Industrial";
+type ProjectStatus = 
+  | "new" 
+  | "scheduled" 
+  | "to-be-rescheduled" 
+  | "installation-in-progress" 
+  | "installation-completed" 
+  | "ces-certificate-applied" 
+  | "ces-certificate-received" 
+  | "ces-certificate-submitted" 
+  | "grid-connection-initiated" 
+  | "grid-connection-completed" 
+  | "system-handover" 
+  | "done"
+  | "not-started"  // For Retailer Projects (legacy)
+  | "in-progress"  // For Retailer Projects (legacy)
+  | "inspection"   // For Retailer Projects (legacy)
+  | "completed"    // For Retailer Projects (legacy)
+  // New Retailer Projects statuses
+  | "retailer-new"
+  | "site-inspection"
+  | "stage-one"
+  | "stage-two"
+  | "full-system"
+  | "canceled"
+  | "retailer-scheduled"
+  | "retailer-to-be-rescheduled"
+  | "retailer-installation-in-progress"
+  | "retailer-installation-completed"
+  | "retailer-ces-certificate-applied"
+  | "retailer-ces-certificate-received"
+  | "retailer-ces-certificate-submitted"
+  | "retailer-done";
+
+interface Comment {
+  id: string;
+  text: string;
+  author: string;
+  timestamp: string;
+  date: string;
+  time: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  priority: Priority;
+  systemSize: string;
+  type: ProjectType;
+  cost: string;
+  startDate: string;
+  endDate: string;
+  assignee: string;
+  assignees?: string[]; // Multiple assignees
+  comments?: Comment[]; // Comments array
+  status: ProjectStatus;
+  // Additional data from Lead CRM
+  leadData?: {
+    title?: string;
+    company?: string;
+    value?: string;
+    date?: string;
+    tags?: string[];
+    assignee?: string;
+    description?: string;
+    comments?: any[];
+  };
+  projectDetails?: {
+    systemType?: string;
+    clientType?: string;
+    propertyInfo?: any;
+    utilityInfo?: any;
+    systemInfo?: any;
+    additionalInfo?: any;
+    projectTimeline?: any;
+    teamAssignment?: any;
+    projectNotes?: string;
+  };
+  siteVisit?: any;
+  onFieldAssessment?: any;
+  projectSnapshot?: any;
+}
+
+// Initial projects - empty array (no demo data)
+const initialProjects: Project[] = [];
+
+// In-House Projects columns
+const inHouseColumns = [
+  {
+    id: "new" as ProjectStatus,
+    title: "New",
+    description: "New projects",
+  },
+  {
+    id: "scheduled" as ProjectStatus,
+    title: "Scheduled",
+    description: "Projects scheduled for installation",
+  },
+  {
+    id: "to-be-rescheduled" as ProjectStatus,
+    title: "To Be Rescheduled",
+    description: "Projects requiring rescheduling",
+  },
+  {
+    id: "installation-in-progress" as ProjectStatus,
+    title: "Installation In-Progress",
+    description: "Installations currently in progress",
+  },
+  {
+    id: "installation-completed" as ProjectStatus,
+    title: "Installation Completed",
+    description: "Installations completed",
+  },
+  {
+    id: "ces-certificate-applied" as ProjectStatus,
+    title: "CES Certificate Applied",
+    description: "CES certificate application submitted",
+  },
+  {
+    id: "ces-certificate-received" as ProjectStatus,
+    title: "CES Certificate Received",
+    description: "CES certificate received",
+  },
+  {
+    id: "grid-connection-initiated" as ProjectStatus,
+    title: "Grid Connection Initiated",
+    description: "Grid connection process started",
+  },
+  {
+    id: "grid-connection-completed" as ProjectStatus,
+    title: "Grid Connection Completed",
+    description: "Grid connection completed",
+  },
+  {
+    id: "system-handover" as ProjectStatus,
+    title: "System Handover",
+    description: "System ready for handover",
+  },
+  {
+    id: "done" as ProjectStatus,
+    title: "Done",
+    description: "Project completed",
+  },
 ];
 
-const MONTH_NAME_MAP: Record<string, number> = {
-  january: 0,
-  jan: 0,
-  february: 1,
-  feb: 1,
-  march: 2,
-  mar: 2,
-  april: 3,
-  apr: 3,
-  may: 4,
-  june: 5,
-  jun: 5,
-  july: 6,
-  jul: 6,
-  august: 7,
-  aug: 7,
-  september: 8,
-  sep: 8,
-  sept: 8,
-  october: 9,
-  oct: 9,
-  november: 10,
-  nov: 10,
-  december: 11,
-  dec: 11,
-};
+// Retailer Projects columns
+const retailerColumns = [
+  {
+    id: "retailer-new" as ProjectStatus,
+    title: "New",
+    description: "New retailer projects",
+  },
+  {
+    id: "site-inspection" as ProjectStatus,
+    title: "Site Inspection",
+    description: "Site inspection in progress",
+  },
+  {
+    id: "stage-one" as ProjectStatus,
+    title: "Stage One",
+    description: "Stage one projects",
+  },
+  {
+    id: "stage-two" as ProjectStatus,
+    title: "Stage Two",
+    description: "Stage two projects",
+  },
+  {
+    id: "full-system" as ProjectStatus,
+    title: "Full System",
+    description: "Full system projects",
+  },
+  {
+    id: "canceled" as ProjectStatus,
+    title: "Canceled",
+    description: "Canceled projects",
+  },
+  {
+    id: "retailer-scheduled" as ProjectStatus,
+    title: "Scheduled",
+    description: "Projects scheduled for installation",
+  },
+  {
+    id: "retailer-to-be-rescheduled" as ProjectStatus,
+    title: "To Be Rescheduled",
+    description: "Projects requiring rescheduling",
+  },
+  {
+    id: "retailer-installation-in-progress" as ProjectStatus,
+    title: "Installation In-Progress",
+    description: "Installations currently in progress",
+  },
+  {
+    id: "retailer-installation-completed" as ProjectStatus,
+    title: "Installation Completed",
+    description: "Installations completed",
+  },
+  {
+    id: "retailer-ces-certificate-applied" as ProjectStatus,
+    title: "CES Certificate Applied",
+    description: "CES certificate application submitted",
+  },
+  {
+    id: "retailer-ces-certificate-received" as ProjectStatus,
+    title: "CES Certificate Received",
+    description: "CES certificate received",
+  },
+  {
+    id: "retailer-ces-certificate-submitted" as ProjectStatus,
+    title: "CES Certificate Submitted",
+    description: "CES certificate submitted",
+  },
+  {
+    id: "retailer-done" as ProjectStatus,
+    title: "Done",
+    description: "Project completed",
+  },
+];
 
-const normalizeDate = (date: Date | null) => {
-  if (!date || Number.isNaN(date.getTime())) return null;
-  const normalized = new Date(date);
-  normalized.setHours(0, 0, 0, 0);
-  return normalized;
-};
+// Legacy columns for backward compatibility
+const columns = retailerColumns;
 
-const parseDateString = (
-  raw: string,
-  fallbackMonth: number,
-  fallbackYear: number,
-) => {
-  if (!raw) return null;
-  const direct = normalizeDate(new Date(raw));
-  if (direct) return direct;
+interface Resource {
+  id: number;
+  name: string;
+  role: string;
+  department: string;
+  email: string;
+  status: 'active' | 'inactive' | 'on-leave';
+}
 
-  const cleaned = raw
-    .replace(/(\d+)(st|nd|rd|th)/gi, "$1")
-    .replace(/[^a-z0-9\s]/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!cleaned) return null;
-
-  const parts = cleaned.split(" ");
-  let monthIndex: number | undefined;
-  let day: number | undefined;
-  let year = fallbackYear;
-
-  parts.forEach((part) => {
-    const lower = part.toLowerCase();
-    if (MONTH_NAME_MAP[lower] !== undefined) {
-      monthIndex = MONTH_NAME_MAP[lower];
-      return;
-    }
-    if (/^\d{4}$/.test(part)) {
-      year = Number.parseInt(part, 10);
-      return;
-    }
-    if (/^\d{1,2}$/.test(part)) {
-      day = Number.parseInt(part, 10);
-    }
-  });
-
-  const resolvedMonth = monthIndex ?? fallbackMonth;
-  if (!day) return null;
-  return normalizeDate(new Date(year, resolvedMonth, day));
-};
-
-const parseProjectDateRange = (
-  project: any,
-  defaultMonth: number,
-  defaultYear: number,
-) => {
-  const startFromFields = normalizeDate(project?.startDate ? new Date(project.startDate) : null);
-  const endFromFields = normalizeDate(project?.endDate ? new Date(project.endDate) : null);
-
-  if (startFromFields && endFromFields) {
-    return { start: startFromFields, end: endFromFields };
-  }
-
-  const raw = typeof project?.date === "string" ? project.date.trim() : "";
-  if (!raw || raw.toLowerCase() === "tbd") {
-    return undefined;
-  }
-
-  const parts = raw.split("-").map((part) => part.trim());
-  const [startPart, endPart] = [parts[0], parts[1] ?? parts[0]];
-
-  const start = parseDateString(startPart, defaultMonth, defaultYear);
-  const end = parseDateString(
-    endPart,
-    start ? start.getMonth() : defaultMonth,
-    start ? start.getFullYear() : defaultYear,
-  );
-
-  if (!start && !end) return undefined;
-
-  if (start && end) {
-    return { start, end };
-  }
-
-  const single = start ?? end;
-  return single
-    ? {
-        start: single,
-        end: single,
-      }
-    : undefined;
-};
-
-const buildMonthlyCalendar = (
-  columnsData: any[] | null,
-  monthDate: Date,
-) => {
-  const reference = new Date(monthDate);
-  const month = reference.getMonth();
-  const year = reference.getFullYear();
-  const firstOfMonth = new Date(year, month, 1);
-  firstOfMonth.setHours(0, 0, 0, 0);
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const leadingBlankCount = firstOfMonth.getDay();
-
-  const projects = (columnsData ?? []).flatMap((column) => column.projects || []);
-
-  const days = Array.from({ length: daysInMonth }, (_, index) => {
-    const dayDate = new Date(year, month, index + 1);
-    dayDate.setHours(0, 0, 0, 0);
-
-    const projectsForDay = projects.filter((project) => {
-      const range = parseProjectDateRange(project, month, year);
-      if (!range?.start || !range?.end) return false;
-      return dayDate >= range.start && dayDate <= range.end;
-    });
-
-    return {
-      date: dayDate,
-      projects: projectsForDay,
-    };
-  });
-
-  const totalCells = leadingBlankCount + days.length;
-  const trailingBlankCount = (7 - (totalCells % 7)) % 7;
-
-  return {
-    leadingBlankCount,
-    trailingBlankCount,
-    days,
-  };
-};
-
-interface AssigneeMultiSelectProps {
-  label?: string;
+// Resource Multi-Select Component
+interface ResourceMultiSelectProps {
+  label: string;
   value: string[];
-  onChange: (next: string[]) => void;
+  onChange: (value: string[]) => void;
   placeholder: string;
   options: string[];
 }
 
-const AssigneeMultiSelect: React.FC<AssigneeMultiSelectProps> = ({
-  label,
-  value,
-  onChange,
-  placeholder,
-  options,
-}) => {
+const ResourceMultiSelect: React.FC<ResourceMultiSelectProps> = ({ label, value, onChange, placeholder, options }) => {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
-  const uniqueOptions = React.useMemo(
-    () => Array.from(new Set(options)).sort((a, b) => a.localeCompare(b)),
-    [options],
-  );
-
-  const filteredOptions = React.useMemo(
-    () =>
-      uniqueOptions.filter((option) =>
-        option.toLowerCase().includes(searchTerm.toLowerCase()),
-      ),
-    [uniqueOptions, searchTerm],
-  );
-
-  const displayText = value.length ? value.join(", ") : placeholder;
-
   const toggleOption = (option: string) => {
     if (value.includes(option)) {
-      onChange(value.filter((item) => item !== option));
+      onChange(value.filter((n) => n !== option));
     } else {
       onChange([...value, option]);
     }
   };
 
+  const displayText = value.length ? value.join(", ") : placeholder;
+  const filteredOptions = options.filter((option) =>
+    option.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
-    <div className="space-y-2">
-      {label ? <Label>{label}</Label> : null}
+    <div>
+      {label && <Label>{label}</Label>}
       <Popover
         open={open}
         onOpenChange={(nextOpen) => {
           setOpen(nextOpen);
-          if (!nextOpen) setSearchTerm("");
+          if (!nextOpen) {
+            setSearchTerm("");
+          }
         }}
         modal={false}
       >
@@ -238,29 +289,25 @@ const AssigneeMultiSelect: React.FC<AssigneeMultiSelectProps> = ({
           <Button
             variant="outline"
             role="combobox"
+            className="w-full justify-between bg-white hover:bg-gray-50 border-gray-300"
             type="button"
-            className="w-full justify-between"
             onClick={() => setOpen((prev) => !prev)}
           >
-            <span className={displayText ? "truncate" : "text-muted-foreground"}>
-              {displayText || placeholder}
-            </span>
+            <span className={displayText !== placeholder ? "truncate text-gray-900" : "text-gray-500"}>{displayText}</span>
             <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-64 p-0" align="start" sideOffset={4}>
+        <PopoverContent className="w-full p-0" align="start" sideOffset={4}>
           <div className="p-2 space-y-2">
             <Input
               autoFocus
+              placeholder="Search resources..."
               value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder={`Search ${(label ?? "assignees").toLowerCase()}...`}
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
             <div className="max-h-48 overflow-y-auto">
               {filteredOptions.length === 0 ? (
-                <p className="px-2 py-4 text-sm text-muted-foreground">
-                  No resources found.
-                </p>
+                <p className="px-2 py-4 text-sm text-muted-foreground">No resources found.</p>
               ) : (
                 filteredOptions.map((option) => {
                   const selected = value.includes(option);
@@ -283,8 +330,8 @@ const AssigneeMultiSelect: React.FC<AssigneeMultiSelectProps> = ({
               <Button
                 variant="ghost"
                 size="sm"
-                type="button"
                 className="w-full justify-between"
+                type="button"
                 onClick={() => onChange([])}
               >
                 Clear selection
@@ -298,2183 +345,3050 @@ const AssigneeMultiSelect: React.FC<AssigneeMultiSelectProps> = ({
 };
 
 export function ProjectManagementScreen() {
-  // Test if component renders
-  console.log("ProjectManagementScreen is rendering");
-  
-  // State management
-  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
-  const [showProjectDetails, setShowProjectDetails] = useState(false);
-  const [showStatsDialog, setShowStatsDialog] = useState(false);
-  const [showTeamMemberDialog, setShowTeamMemberDialog] = useState(false);
-  const [showAvailabilityDialog, setShowAvailabilityDialog] = useState(false);
-  const [selectedProject, setSelectedProject] = useState(null);
-  const [selectedTeamMember, setSelectedTeamMember] = useState(null);
-  const [selectedAvailability, setSelectedAvailability] = useState(null);
-  const [calendarMonthDate, setCalendarMonthDate] = useState(() => {
-    const date = new Date();
-    date.setDate(1);
-    date.setHours(0, 0, 0, 0);
-    return date;
+  const [showProjectDetailsDialog, setShowProjectDetailsDialog] = useState(false);
+  const [showEditProjectDialog, setShowEditProjectDialog] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [currentView, setCurrentView] = useState<"kanban" | "retailer-projects" | "calendar">("kanban");
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [calendarViewType, setCalendarViewType] = useState<"month" | "week">("month");
+  const [currentWeek, setCurrentWeek] = useState(new Date());
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [userEmail, setUserEmail] = useState<string>("");
+  const [userName, setUserName] = useState<string>("");
+  const [showSyncStatus, setShowSyncStatus] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{
+    firestoreEnabled: boolean;
+    localProjectCount: number;
+    firestoreProjectCount: number;
+    lastSyncTime: string | null;
+    lastSyncEvent: string | null;
+    recentChanges: string[];
+  }>({
+    firestoreEnabled: false,
+    localProjectCount: 0,
+    firestoreProjectCount: 0,
+    lastSyncTime: null,
+    lastSyncEvent: null,
+    recentChanges: []
   });
-  const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
-    const diff = date.getDay();
-    date.setDate(date.getDate() - diff);
-    return date;
-  });
-  const [calendarViewType, setCalendarViewType] = useState("weekly"); // "weekly" or "monthly"
-  const [showScheduleDetails, setShowScheduleDetails] = useState(false);
-  const [selectedScheduleItem, setSelectedScheduleItem] = useState(null);
-  const [showEditSchedule, setShowEditSchedule] = useState(false);
-  const [editingScheduleItem, setEditingScheduleItem] = useState(null);
-  const [showEditMember, setShowEditMember] = useState(false);
-  const [editingMember, setEditingMember] = useState(null);
-  const [selectedSystemType, setSelectedSystemType] = useState("");
-  const [otherSelections, setOtherSelections] = useState({});
-  const [editingProject, setEditingProject] = useState(null);
-  const [commentText, setCommentText] = useState("");
-  const [userEmail] = useState("project.manager@xtechs.com"); // This would come from auth context
-  const [columns, setColumns] = useState(null); // Will be initialized from kanbanColumns
+  
+  // Comments state
+  const [newComment, setNewComment] = useState("");
+  const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
+  
+  // Installation Day data state
+  const [installationData, setInstallationData] = useState<{
+    checklist: Array<{ id: number; category: string; item: string; checked: boolean }>;
+    checklistNotes: Record<number, string>;
+    expenses: Array<{ id: number; item: string; amount: number; description: string; date: string; category: string; employeeName?: string; employeeEmail?: string }>;
+    breaks: Array<{ id: number; type: string; startTime: string; endTime: string }>;
+    customerNotes: string;
+    jobStatus: { jobStarted: boolean; jobPaused: boolean; jobStartTime: string | null; totalPausedDuration: number };
+    photos: Array<{ id: number; title: string; description: string; timestamp: string; status: string; imageData?: string; fileName?: string }>;
+  } | null>(null);
+
+  // New project form state
   const [newProject, setNewProject] = useState({
-    title: "",
-    assignee: "",
-    assignees: [],
+    name: "",
+    priority: "medium" as Priority,
+    systemSize: "",
+    type: "Residential" as ProjectType,
+    cost: "",
     startDate: "",
     endDate: "",
-    priority: "",
-    clientType: "",
-    clientName: "",
-    jobType: "",
-    inspectionDate: "",
-    inspectionTime: "",
-    inspectionBooked: false,
-    stage1Date: "",
-    stage1Time: "",
-    stage1Booked: false,
-    stage2Date: "",
-    stage2Time: "",
-    stage2Booked: false,
-    fullSystemDate: "",
-    fullSystemTime: "",
-    fullSystemBooked: false,
-    systemSize: "",
-    projectType: "",
-    value: "",
-    description: "",
-    // Customer Information
+    assignee: "",
+      status: "new" as ProjectStatus,
+    // Retailer-specific fields
+    projectId: "",
     customerName: "",
     customerEmail: "",
     customerContact: "",
     customerAddress: "",
     location: "",
-    // Property Information
-    houseStorey: "",
-    roofType: "",
-    propertyType: "",
-    accessTo2ndStorey: "",
-    accessToInverter: "",
-    monitoring: "",
-    // System Information
-    inverterSize: "",
-    batterySize: "",
-    panelBrand: "",
+    clientType: "",
+    clientName: "",
+    jobType: "",
+    siteInspectionDate: "",
+    siteInspectionTime: "",
+    priceAud: "",
+    // System configuration
+    systemType: "",
+    pvSystemSizeKw: "",
+    inverterSizeKw: "",
     inverterBrand: "",
+    inverterModel: "",
+    panelBrand: "",
+    panelModuleWatts: "",
+    batterySizeKwh: "",
     batteryBrand: "",
-    evChargerBrand: ""
+    batteryModel: "",
+    evChargerBrand: "",
+    evChargerModel: "",
+    // Property info
+    houseStorey: "",
+    houseStoreyOther: "",
+    roofType: "",
+    roofTypeOther: "",
+    meterPhase: "",
+    accessSecondStorey: "",
+    accessToInverter: "",
+    // Utility info
+    energyRetailer: "",
+    energyDistributor: "",
+    solarVictoriaEligible: "",
+    preApprovalNumber: "",
+    nmiNumber: "",
+    meterNumber: "",
   });
-  const [resourceNames, setResourceNames] = useState<string[]>([]);
-  const currentMonthLabel = React.useMemo(
-    () =>
-      calendarMonthDate.toLocaleDateString(undefined, {
-        month: "long",
-        year: "numeric",
-      }),
-    [calendarMonthDate],
-  );
-  const currentWeekLabel = React.useMemo(() => {
-    const start = new Date(calendarWeekStart);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 6);
-    const includeYearInStart = start.getFullYear() !== end.getFullYear();
-    const startLabel = start.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: includeYearInStart ? "numeric" : undefined,
-    });
-    const endLabel = end.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-    return `Week of ${startLabel} - ${endLabel}`;
-  }, [calendarWeekStart]);
 
+  // Edit project form state
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+
+  // Get user email from session
+  useEffect(() => {
+    try {
+      const sessionData = localStorage.getItem('xtr_session');
+      if (sessionData) {
+        const session = JSON.parse(sessionData);
+        if (session.userEmail) {
+          setUserEmail(session.userEmail);
+          // Convert email to name (e.g., "john.doe@example.com" -> "John Doe")
+          const emailName = session.userEmail.split('@')[0];
+          const nameParts = emailName.replace(/[._-]/g, ' ').split(' ').map((part: string) => 
+            part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+          );
+          setUserName(nameParts.join(' ') || session.userEmail);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading user session:', error);
+    }
+  }, []);
+
+  // Load projects from localStorage on mount
+  useEffect(() => {
+    const loadProjects = () => {
+      try {
+        const localProjects = localStorage.getItem('xtr_projects');
+        if (localProjects) {
+          const parsed = JSON.parse(localProjects);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Remove duplicates based on ID first
+            const uniqueById = new Map<string, Project>();
+            parsed.forEach((p: Project) => {
+              if (p.id && !uniqueById.has(p.id)) {
+                uniqueById.set(p.id, p);
+              }
+            });
+            
+            // Also remove duplicates based on name + email/address combination
+            const uniqueProjects: Project[] = [];
+            const seenCombinations = new Set<string>();
+            
+            Array.from(uniqueById.values()).forEach((p: Project) => {
+              // Filter out invalid/nameless projects using validation function
+              if (!isValidProject(p)) {
+                console.log('Filtering out invalid/unnamed project:', { id: p.id, name: p.name });
+                return;
+              }
+              
+              // Create a unique key based on name and identifying info
+              const name = (p.name || '').trim();
+              const nameLower = name.toLowerCase();
+              const email = (p.projectDetails?.additionalInfo?.customerEmail || 
+                            p.projectSnapshot?.customerEmail || 
+                            p.leadData?.tags?.find((t: string) => t.includes('@')) || 
+                            '').toLowerCase().trim();
+              const address = (p.projectDetails?.additionalInfo?.customerAddress || 
+                              p.projectSnapshot?.customerAddress || 
+                              p.leadData?.company || 
+                              '').toLowerCase().trim();
+              
+              // Create unique key
+              const uniqueKey = `${nameLower}|${email}|${address}`;
+              
+              // Only add if we haven't seen this combination before
+              if (uniqueKey && !seenCombinations.has(uniqueKey)) {
+                seenCombinations.add(uniqueKey);
+                uniqueProjects.push(p);
+              } else if (!uniqueKey || uniqueKey === '||') {
+                // If no unique identifier, keep by ID only (already deduplicated)
+                uniqueProjects.push(p);
+              }
+            });
+            
+            console.log(`[localStorage Load] Deduplicated projects: ${parsed.length} -> ${uniqueProjects.length}`);
+            
+            // Debug: Log retailer projects from localStorage
+            const retailerProjectsLocal = uniqueProjects.filter(p => 
+              ["retailer-new", "site-inspection", "stage-one", "stage-two", "full-system", "canceled", "retailer-scheduled"].includes(p.status)
+            );
+            console.log(`[localStorage Load] Retailer projects found: ${retailerProjectsLocal.length}`, 
+              retailerProjectsLocal.map(p => ({ id: p.id, name: p.name, status: p.status }))
+            );
+            
+            // Debug: Check for "Rishi" in localStorage
+            const rishiLocal = uniqueProjects.filter(p => 
+              (p.name || '').toLowerCase().includes('rishi')
+            );
+            if (rishiLocal.length > 0) {
+              console.log(`[localStorage Load] Found Rishi in localStorage:`, rishiLocal.map(p => ({ 
+                id: p.id, 
+                name: p.name, 
+                status: p.status 
+              })));
+            }
+            
+            // Save deduplicated projects back to localStorage
+            if (uniqueProjects.length !== parsed.length) {
+              localStorage.setItem('xtr_projects', JSON.stringify(uniqueProjects));
+              console.log('[localStorage Load] Removed duplicate projects from localStorage');
+            }
+            
+            setProjects(uniqueProjects);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading projects from localStorage:', error);
+      }
+    };
+
+    loadProjects();
+
+    // Listen for storage changes
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'xtr_projects') {
+        loadProjects();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  // Sync projects with Firestore for cross-device synchronization
+  const firestoreHasDataRef = useRef(false);
+  const isSyncingRef = useRef(false);
+  
+  // Cleanup function to remove unnamed/invalid projects from localStorage and Firestore
+  const cleanupInvalidProjects = async () => {
+    try {
+      // Clean up localStorage
+      const localProjects = localStorage.getItem('xtr_projects');
+      if (localProjects) {
+        const parsed = JSON.parse(localProjects);
+        if (Array.isArray(parsed)) {
+          const validProjects = parsed.filter(isValidProject);
+          const removedCount = parsed.length - validProjects.length;
+          
+          if (removedCount > 0) {
+            localStorage.setItem('xtr_projects', JSON.stringify(validProjects));
+            console.log(`[Cleanup] Removed ${removedCount} invalid/unnamed project(s) from localStorage`);
+            
+            // Also remove from Firestore if enabled
+            if (firebaseEnabled && db) {
+              const invalidProjects = parsed.filter(p => !isValidProject(p));
+              const deletePromises = invalidProjects
+                .filter(p => p.id && p.id.trim() !== '')
+                .map(p => deleteDoc(doc(db, 'projects', p.id))
+                  .then(() => {
+                    console.log(`[Cleanup] Deleted invalid project from Firestore: ${p.id} - ${p.name || 'unnamed'}`);
+                  })
+                  .catch((err) => {
+                    console.error(`[Cleanup] Error deleting invalid project ${p.id}:`, err);
+                  }));
+              
+              await Promise.all(deletePromises);
+              console.log(`[Cleanup] Cleaned up ${invalidProjects.length} invalid project(s) from Firestore`);
+            }
+            
+            setProjects(validProjects);
+            return removedCount;
+          }
+        }
+      }
+      return 0;
+    } catch (error) {
+      console.error('[Cleanup] Error cleaning up invalid projects:', error);
+      return 0;
+    }
+  };
+
+  // Check sync status - fetch current state from Firestore and compare with local
+  const checkSyncStatus = async () => {
+    try {
+      const localProjects = localStorage.getItem('xtr_projects');
+      const localProjectsList: Project[] = localProjects ? JSON.parse(localProjects) : [];
+      const localValidProjects = localProjectsList.filter(isValidProject);
+      
+      if (firebaseEnabled && db) {
+        // Fetch from Firestore
+        const projectsSnapshot = await getDocs(collection(db, 'projects'));
+        const firestoreProjects: Project[] = [];
+        
+        projectsSnapshot.forEach((d) => {
+          const data = d.data();
+          firestoreProjects.push({
+            ...data,
+            id: d.id,
+          } as Project);
+        });
+        
+        const firestoreValidProjects = firestoreProjects.filter(isValidProject);
+        
+        // Find projects in Firestore but not in local
+        const localIds = new Set(localValidProjects.map(p => p.id).filter(Boolean));
+        const firestoreIds = new Set(firestoreValidProjects.map(p => p.id).filter(Boolean));
+        const inFirestoreNotLocal = firestoreValidProjects.filter(p => p.id && !localIds.has(p.id));
+        const inLocalNotFirestore = localValidProjects.filter(p => p.id && !firestoreIds.has(p.id));
+        
+        // Update sync status
+        setSyncStatus({
+          firestoreEnabled: true,
+          localProjectCount: localValidProjects.length,
+          firestoreProjectCount: firestoreValidProjects.length,
+          lastSyncTime: new Date().toLocaleString(),
+          lastSyncEvent: 'Status checked',
+          recentChanges: [
+            `Local projects: ${localValidProjects.length}`,
+            `Firestore projects: ${firestoreValidProjects.length}`,
+            inFirestoreNotLocal.length > 0 ? `Projects in Firestore but not local: ${inFirestoreNotLocal.length} (${inFirestoreNotLocal.map(p => p.name).join(', ')})` : 'All Firestore projects are in local',
+            inLocalNotFirestore.length > 0 ? `Projects in local but not Firestore: ${inLocalNotFirestore.length} (${inLocalNotFirestore.map(p => p.name).join(', ')})` : 'All local projects are in Firestore',
+          ]
+        });
+        
+        console.log('[Sync Status]', {
+          local: localValidProjects.length,
+          firestore: firestoreValidProjects.length,
+          inFirestoreNotLocal: inFirestoreNotLocal.map(p => p.name),
+          inLocalNotFirestore: inLocalNotFirestore.map(p => p.name)
+        });
+      } else {
+        setSyncStatus({
+          firestoreEnabled: false,
+          localProjectCount: localValidProjects.length,
+          firestoreProjectCount: 0,
+          lastSyncTime: null,
+          lastSyncEvent: 'Firebase not enabled',
+          recentChanges: ['Firebase is not configured. Projects are stored locally only.']
+        });
+      }
+    } catch (error) {
+      console.error('[Sync Status] Error checking sync status:', error);
+      setSyncStatus(prev => ({
+        ...prev,
+        lastSyncEvent: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      }));
+    }
+  };
+
+  // Manual refresh function to force reload from Firestore
+  const handleManualRefresh = async () => {
+    if (!firebaseEnabled || !db) {
+      alert('Firebase is not enabled. Projects are stored locally only and won\'t sync across devices.');
+      return;
+    }
+    
+    try {
+      console.log('[ProjectManagement] Manual refresh: Fetching from Firestore...');
+      isSyncingRef.current = true;
+      
+      // First, clean up invalid projects
+      const removedCount = await cleanupInvalidProjects();
+      if (removedCount > 0) {
+        console.log(`[ProjectManagement] Manual refresh: Cleaned up ${removedCount} invalid/unnamed project(s)`);
+      }
+      
+      // Fetch all projects from Firestore
+      const projectsSnapshot = await getDocs(collection(db, 'projects'));
+      const firestoreProjects: Project[] = [];
+      
+      projectsSnapshot.forEach((d) => {
+        const data = d.data();
+        firestoreProjects.push({
+          ...data,
+          id: d.id,
+        } as Project);
+      });
+      
+      console.log(`[ProjectManagement] Manual refresh: Found ${firestoreProjects.length} projects in Firestore`);
+      
+      // Filter out invalid projects from Firestore
+      const validFirestoreProjects = firestoreProjects.filter(isValidProject);
+      if (validFirestoreProjects.length < firestoreProjects.length) {
+        const invalidCount = firestoreProjects.length - validFirestoreProjects.length;
+        console.log(`[ProjectManagement] Manual refresh: Filtered out ${invalidCount} invalid/unnamed project(s) from Firestore`);
+        
+        // Delete invalid projects from Firestore
+        const invalidProjects = firestoreProjects.filter(p => !isValidProject(p));
+        await Promise.all(
+          invalidProjects
+            .filter(p => p.id && p.id.trim() !== '')
+            .map(p => deleteDoc(doc(db, 'projects', p.id))
+              .then(() => {
+                console.log(`[ProjectManagement] Deleted invalid project from Firestore: ${p.id} - ${p.name || 'unnamed'}`);
+              })
+              .catch((err) => {
+                console.error(`[ProjectManagement] Error deleting invalid project ${p.id}:`, err);
+              }))
+        );
+      }
+      
+      // Debug: Log all Firestore projects with stage-one status
+      const firestoreStageOne = validFirestoreProjects.filter(p => p.status === 'stage-one');
+      console.log(`[ProjectManagement] Manual refresh: Found ${firestoreStageOne.length} stage-one projects in Firestore:`, 
+        firestoreStageOne.map(p => ({ id: p.id, name: p.name, status: p.status }))
+      );
+      
+      // Debug: Check for Scott Megens in Firestore
+      const scottInFirestore = validFirestoreProjects.filter(p => 
+        (p.name || '').toLowerCase().includes('scott') || (p.name || '').toLowerCase().includes('megens')
+      );
+      if (scottInFirestore.length > 0) {
+        console.log(`[ProjectManagement] Manual refresh: Found Scott Megens in Firestore:`, scottInFirestore.map(p => ({ 
+          id: p.id, 
+          name: p.name, 
+          status: p.status 
+        })));
+      }
+      
+      // Debug: Check for Arthur Romas in Firestore
+      const arthurInFirestore = validFirestoreProjects.filter(p => 
+        (p.name || '').toLowerCase().includes('arthur') || (p.name || '').toLowerCase().includes('romas')
+      );
+      if (arthurInFirestore.length > 0) {
+        console.log(`[ProjectManagement] Manual refresh: ✅ Found Arthur Romas in Firestore:`, arthurInFirestore.map(p => ({ 
+          id: p.id, 
+          name: p.name, 
+          status: p.status 
+        })));
+      } else {
+        console.log(`[ProjectManagement] Manual refresh: ⚠️ Arthur Romas NOT found in Firestore (${validFirestoreProjects.length} total projects)`);
+      }
+      
+      // Merge with local projects
+      const localProjects = localStorage.getItem('xtr_projects');
+      const localProjectsList: Project[] = localProjects ? JSON.parse(localProjects) : [];
+      
+      // Create merged list (Firestore takes precedence)
+      const mergedProjects: Project[] = [];
+      const seenIds = new Set<string>();
+      
+      // First, add all valid Firestore projects
+      validFirestoreProjects.forEach((p) => {
+        if (p.id && !seenIds.has(p.id) && isValidProject(p)) {
+          seenIds.add(p.id);
+          mergedProjects.push(p);
+        }
+      });
+      
+      // Then, add local projects not in Firestore
+      localProjectsList.forEach((p) => {
+        if (p.id && !seenIds.has(p.id) && isValidProject(p)) {
+          seenIds.add(p.id);
+          mergedProjects.push(p);
+          // Also sync this local project to Firestore
+          setDoc(doc(db, 'projects', p.id), p as any, { merge: true }).catch((err) => {
+            console.error('Error syncing local project to Firestore:', err);
+          });
+        }
+      });
+      
+      // Filter valid projects (double-check)
+      const validProjects = mergedProjects.filter(isValidProject);
+      
+      // Update state and localStorage
+      setProjects(validProjects);
+      localStorage.setItem('xtr_projects', JSON.stringify(validProjects));
+      
+      console.log(`[ProjectManagement] Manual refresh: Synced ${validProjects.length} projects`);
+      alert(`Refreshed! Found ${firestoreProjects.length} projects in Firestore, ${validProjects.length} after validation.`);
+      
+      // Dispatch event
+      window.dispatchEvent(new CustomEvent('xtr-projects-updated'));
+    } catch (error) {
+      console.error('[ProjectManagement] Manual refresh error:', error);
+      alert('Error refreshing projects. Check console for details.');
+    } finally {
+      isSyncingRef.current = false;
+    }
+  };
+  
+  useEffect(() => {
+    if (!firebaseEnabled || !db) {
+      console.log('[ProjectManagement] Firestore not enabled, using localStorage only');
+      return;
+    }
+
+    console.log('[ProjectManagement] Setting up Firestore sync for projects');
+    
+    // Force initial sync: upload all local projects to Firestore immediately
+    const performInitialSync = async () => {
+      try {
+        const localProjects = localStorage.getItem('xtr_projects');
+        if (localProjects) {
+          const parsed = JSON.parse(localProjects);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+              const validProjects = parsed.filter(isValidProject);
+            
+            if (validProjects.length > 0) {
+              console.log(`[ProjectManagement] 🔄 Initial sync: Uploading ${validProjects.length} local project(s) to Firestore...`);
+              
+              // Upload all local projects to Firestore (will merge if they already exist)
+              await Promise.all(
+                validProjects.map((p: Project) => {
+                  if (p.id) {
+                    return setDoc(doc(db, 'projects', p.id), p as any, { merge: true })
+                      .then(() => {
+                        console.log(`[ProjectManagement] ✅ Initial sync: Uploaded ${p.id} - ${p.name}`);
+                      })
+                      .catch((err) => {
+                        console.error(`[ProjectManagement] ❌ Initial sync error for ${p.id}:`, err);
+                      });
+                  }
+                  return Promise.resolve();
+                })
+              );
+              
+              console.log(`[ProjectManagement] ✅ Initial sync complete: Uploaded ${validProjects.length} project(s)`);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[ProjectManagement] Initial sync error:', error);
+      }
+    };
+    
+    // Run initial sync once when component mounts and Firebase is ready
+    performInitialSync();
+    
+    const unsub = onSnapshot(collection(db, 'projects'), (snap) => {
+      console.log('[ProjectManagement] Firestore snapshot received. Docs:', snap.size, 'isSyncing:', isSyncingRef.current);
+      console.log('[ProjectManagement] Snapshot metadata - hasPendingWrites:', snap.metadata.hasPendingWrites, 'fromCache:', snap.metadata.fromCache);
+      
+      // Always process Firestore updates - don't block them
+      // The isSyncingRef is only used to prevent infinite loops during merges
+      
+      const firestoreProjects: Project[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        firestoreProjects.push({
+          ...data,
+          id: d.id,
+        } as Project);
+      });
+
+      if (firestoreProjects.length === 0 && !firestoreHasDataRef.current) {
+        // Bootstrap Firestore with local data if Firestore is empty
+        try {
+          const localProjects = localStorage.getItem('xtr_projects');
+          if (localProjects) {
+            const parsed = JSON.parse(localProjects);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              console.log('[ProjectManagement] Bootstrapping Firestore with local projects:', parsed.length);
+              
+              // Filter and validate projects before bootstrapping
+              const validProjects = parsed.filter(isValidProject);
+              
+              console.log('[ProjectManagement] Valid projects to bootstrap:', validProjects.length, 
+                validProjects.map(p => ({ id: p.id, name: p.name, status: p.status })));
+              
+              isSyncingRef.current = true;
+              Promise.all(
+                validProjects.map((p: Project) => {
+                  if (p.id) {
+                    return setDoc(doc(db, 'projects', p.id), p as any).catch((err) => {
+                      console.error('Error bootstrapping project:', err);
+                      return null;
+                    });
+                  }
+                  return null;
+                })
+              ).then(() => {
+                console.log('[ProjectManagement] Bootstrapped Firestore with local projects');
+                isSyncingRef.current = false;
+              });
+              
+              // Keep local projects in state while bootstrapping
+              setProjects(validProjects);
+            }
+          }
+        } catch (e) {
+          console.warn('[ProjectManagement] Failed to bootstrap Firestore', e);
+        }
+        return;
+      }
+
+      if (firestoreProjects.length > 0) {
+        firestoreHasDataRef.current = true;
+        
+        // Process updates immediately - always process Firestore updates
+        // Don't skip even if syncing - this allows real-time updates from other devices
+        const wasSyncing = isSyncingRef.current;
+        if (wasSyncing) {
+          console.log('[ProjectManagement] Processing Firestore update while syncing (real-time update from other device)');
+        }
+        
+        isSyncingRef.current = true;
+        try {
+          const localProjects = localStorage.getItem('xtr_projects');
+          const localProjectsList: Project[] = localProjects ? JSON.parse(localProjects) : [];
+          
+          // Create a map of Firestore projects by ID
+          const firestoreMap = new Map<string, Project>();
+          firestoreProjects.forEach((p) => {
+            if (p.id) {
+              firestoreMap.set(p.id, p);
+            }
+          });
+          
+          // Check if there are new projects from other devices
+          const currentLocalIds = new Set(localProjectsList.map(p => p.id).filter(Boolean));
+          const firestoreIds = new Set(firestoreProjects.map(p => p.id).filter(Boolean));
+          const newProjectIds = [...firestoreIds].filter(id => !currentLocalIds.has(id));
+          
+          if (newProjectIds.length > 0) {
+            console.log(`[ProjectManagement] 🔄 REAL-TIME SYNC: Detected ${newProjectIds.length} new project(s) from other device(s):`, 
+              newProjectIds.map(id => {
+                const proj = firestoreProjects.find(p => p.id === id);
+                return proj ? { id: proj.id, name: proj.name, status: proj.status } : id;
+              })
+            );
+            
+            // Check specifically for Arthur Romas
+            const arthurProjects = firestoreProjects.filter(p => 
+              (p.name || '').toLowerCase().includes('arthur') || (p.name || '').toLowerCase().includes('romas')
+            );
+            if (arthurProjects.length > 0) {
+              console.log(`[ProjectManagement] ✅ Found Arthur Romas project(s) in Firestore BEFORE merge:`, 
+                arthurProjects.map(p => ({ 
+                  id: p.id, 
+                  name: p.name, 
+                  status: p.status,
+                  nameLength: (p.name || '').length,
+                  hasValidId: !!(p.id && p.id.trim() !== ''),
+                  isValid: isValidProject(p),
+                  nameTrimmed: (p.name || '').trim()
+                }))
+              );
+            }
+          }
+          
+          // Merge: Firestore takes precedence, but keep local projects not in Firestore
+          const mergedProjects: Project[] = [];
+          const seenIds = new Set<string>();
+          
+          // First, add all Firestore projects (these are the source of truth)
+          firestoreProjects.forEach((p) => {
+            if (p.id && !seenIds.has(p.id)) {
+              seenIds.add(p.id);
+              mergedProjects.push(p);
+            }
+          });
+          
+          // Check Arthur Romas after merge
+          const arthurInMerged = mergedProjects.filter(p => 
+            (p.name || '').toLowerCase().includes('arthur') || (p.name || '').toLowerCase().includes('romas')
+          );
+          if (arthurInMerged.length > 0) {
+            console.log(`[ProjectManagement] ✅ Arthur Romas in mergedProjects (${mergedProjects.length} total):`, 
+              arthurInMerged.map(p => ({ id: p.id, name: p.name, status: p.status }))
+            );
+          }
+          
+          // Then, add local projects that aren't in Firestore
+          const localProjectsToSync: Project[] = [];
+          localProjectsList.forEach((p) => {
+            if (p.id && !seenIds.has(p.id)) {
+              seenIds.add(p.id);
+              mergedProjects.push(p);
+              localProjectsToSync.push(p);
+            }
+          });
+          
+          // Sync all local projects that aren't in Firestore (batch sync)
+          if (localProjectsToSync.length > 0) {
+            console.log(`[ProjectManagement] 🔄 UPLOADING ${localProjectsToSync.length} local project(s) to Firestore:`, 
+              localProjectsToSync.map(p => ({ id: p.id, name: p.name, status: p.status }))
+            );
+            
+            // Sync each local project to Firestore immediately
+            Promise.all(
+              localProjectsToSync.map((p) => {
+                if (p.id) {
+                  return setDoc(doc(db, 'projects', p.id), p as any, { merge: true })
+                    .then(() => {
+                      console.log(`[ProjectManagement] ✅ Uploaded local project to Firestore: ${p.id} - ${p.name}`);
+                    })
+                    .catch((err) => {
+                      console.error(`[ProjectManagement] ❌ Error uploading local project ${p.id} to Firestore:`, err);
+                    });
+                }
+                return Promise.resolve();
+              })
+            ).then(() => {
+              console.log(`[ProjectManagement] ✅ Finished uploading ${localProjectsToSync.length} local project(s) to Firestore`);
+            });
+          }
+          
+          // Check Arthur Romas before validation
+          const arthurBeforeValidation = mergedProjects.filter(p => 
+            (p.name || '').toLowerCase().includes('arthur') || (p.name || '').toLowerCase().includes('romas')
+          );
+          console.log(`[ProjectManagement] 📊 Before validation: ${mergedProjects.length} total projects, ${arthurBeforeValidation.length} Arthur Romas projects`);
+          
+          // Filter out invalid/nameless projects
+          const validProjects = mergedProjects.filter((p) => {
+            const isValid = isValidProject(p);
+            // Log if Arthur Romas is being filtered out
+            const isArthur = (p.name || '').toLowerCase().includes('arthur') || (p.name || '').toLowerCase().includes('romas');
+            if (isArthur && !isValid) {
+              const name = (p.name || '').trim();
+              console.error(`[ProjectManagement] ❌ Arthur Romas FAILED validation:`, {
+                id: p.id,
+                name: name,
+                nameLength: name.length,
+                hasId: !!(p.id && p.id.trim() !== ''),
+                nameCheck: name && name !== '' && name !== 'Untitled Project' && name.length >= 2,
+                containsUnnamed: name.toLowerCase().includes('unnamed') || name.toLowerCase().includes('untitled'),
+                fullProject: p
+              });
+            }
+            return isValid;
+          });
+          
+          // Check Arthur Romas after validation
+          const arthurAfterValidation = validProjects.filter(p => 
+            (p.name || '').toLowerCase().includes('arthur') || (p.name || '').toLowerCase().includes('romas')
+          );
+          console.log(`[ProjectManagement] 📊 After validation: ${validProjects.length} valid projects, ${arthurAfterValidation.length} Arthur Romas projects`);
+          
+          // Remove duplicates
+          const uniqueProjects: Project[] = [];
+          const seenCombinations = new Set<string>();
+          const seenIdsFinal = new Set<string>();
+          
+          validProjects.forEach((p) => {
+            // Skip if we've already seen this ID
+            if (p.id && seenIdsFinal.has(p.id)) {
+              const isArthur = (p.name || '').toLowerCase().includes('arthur') || (p.name || '').toLowerCase().includes('romas');
+              if (isArthur) {
+                console.warn(`[ProjectManagement] ⚠️ Arthur Romas duplicate ID detected: ${p.id} - ${p.name}`);
+              }
+              return;
+            }
+            
+            const name = (p.name || '').toLowerCase().trim();
+            const email = (p.projectDetails?.additionalInfo?.customerEmail || 
+                          p.projectSnapshot?.customerEmail || 
+                          p.leadData?.tags?.find((t: string) => t.includes('@')) || 
+                          '').toLowerCase().trim();
+            const address = (p.projectDetails?.additionalInfo?.customerAddress || 
+                            p.projectSnapshot?.customerAddress || 
+                            p.leadData?.company || 
+                            '').toLowerCase().trim();
+            const key = `${name}|${email}|${address}`;
+            
+            const isArthur = (p.name || '').toLowerCase().includes('arthur') || (p.name || '').toLowerCase().includes('romas');
+            
+            if (key && key !== '||' && !seenCombinations.has(key)) {
+              seenCombinations.add(key);
+              if (p.id) seenIdsFinal.add(p.id);
+              uniqueProjects.push(p);
+              if (isArthur) {
+                console.log(`[ProjectManagement] ✅ Arthur Romas added to uniqueProjects with key: ${key}`);
+              }
+            } else if (!key || key === '||') {
+              // Keep by ID only if no unique identifier
+              if (p.id && !seenIdsFinal.has(p.id)) {
+                seenIdsFinal.add(p.id);
+                uniqueProjects.push(p);
+                if (isArthur) {
+                  console.log(`[ProjectManagement] ✅ Arthur Romas added to uniqueProjects by ID only (no key): ${p.id}`);
+                }
+              } else if (isArthur) {
+                console.warn(`[ProjectManagement] ⚠️ Arthur Romas NOT added - key: "${key}", ID already seen: ${seenIdsFinal.has(p.id || '')}`);
+              }
+            } else if (isArthur) {
+              console.warn(`[ProjectManagement] ⚠️ Arthur Romas NOT added - duplicate key: "${key}" (already seen: ${seenCombinations.has(key)})`);
+            }
+          });
+          
+          setProjects(uniqueProjects);
+          localStorage.setItem('xtr_projects', JSON.stringify(uniqueProjects));
+          console.log(`[ProjectManagement] Synced ${uniqueProjects.length} projects from Firestore`);
+          
+          // Debug: Log all retailer projects
+          const retailerProjects = uniqueProjects.filter(p => 
+            ["retailer-new", "site-inspection", "stage-one", "stage-two", "full-system", "canceled", "retailer-scheduled"].includes(p.status)
+          );
+          console.log(`[ProjectManagement] Retailer projects found: ${retailerProjects.length}`, 
+            retailerProjects.map(p => ({ id: p.id, name: p.name, status: p.status, nameLength: (p.name || '').length }))
+          );
+          
+          // Debug: Log ALL projects to see what we have
+          console.log(`[ProjectManagement] ALL projects (${uniqueProjects.length}):`, 
+            uniqueProjects.map(p => ({ id: p.id, name: p.name, status: p.status }))
+          );
+          
+          // Dispatch event to notify other components of the update
+          window.dispatchEvent(new CustomEvent('xtr-projects-updated'));
+          
+          // Update sync status after merge
+          checkSyncStatus().catch(err => console.error('[Sync Status] Error updating sync status:', err));
+          
+          // Debug: Check for "Rishi" specifically
+          const rishiProjects = uniqueProjects.filter(p => 
+            (p.name || '').toLowerCase().includes('rishi')
+          );
+          if (rishiProjects.length > 0) {
+            console.log(`[ProjectManagement] Found Rishi projects:`, rishiProjects.map(p => ({ 
+              id: p.id, 
+              name: p.name, 
+              status: p.status,
+              nameLength: (p.name || '').length,
+              hasId: !!p.id
+            })));
+          } else {
+            console.log(`[ProjectManagement] No Rishi projects found in ${uniqueProjects.length} total projects`);
+          }
+          
+          // Debug: Check for "Scott Megens" specifically
+          const scottProjects = uniqueProjects.filter(p => 
+            (p.name || '').toLowerCase().includes('scott') || (p.name || '').toLowerCase().includes('megens')
+          );
+          if (scottProjects.length > 0) {
+            console.log(`[ProjectManagement] Found Scott Megens projects:`, scottProjects.map(p => ({ 
+              id: p.id, 
+              name: p.name, 
+              status: p.status,
+              nameLength: (p.name || '').length,
+              hasId: !!p.id
+            })));
+          } else {
+            console.log(`[ProjectManagement] No Scott Megens projects found in ${uniqueProjects.length} total projects`);
+          }
+          
+          // Debug: Log all stage-one projects
+          const stageOneProjects = uniqueProjects.filter(p => p.status === 'stage-one');
+          console.log(`[ProjectManagement] All stage-one projects (${stageOneProjects.length}):`, 
+            stageOneProjects.map(p => ({ id: p.id, name: p.name, status: p.status }))
+          );
+          
+          // Check for Arthur Romas in final list
+          const arthurInFinal = uniqueProjects.filter(p => 
+            (p.name || '').toLowerCase().includes('arthur') || (p.name || '').toLowerCase().includes('romas')
+          );
+          if (arthurInFinal.length > 0) {
+            console.log(`[ProjectManagement] ✅ Arthur Romas project is in the final merged list:`, 
+              arthurInFinal.map(p => ({ id: p.id, name: p.name, status: p.status }))
+            );
+          } else {
+            console.warn(`[ProjectManagement] ⚠️ Arthur Romas project NOT found in final merged list`);
+          }
+        } catch (error) {
+          console.error('[ProjectManagement] Error merging Firestore data:', error);
+        } finally {
+          isSyncingRef.current = false;
+        }
+      }
+    }, (error) => {
+      console.error('[ProjectManagement] Firestore snapshot error:', error);
+    });
+
+    return () => {
+      unsub();
+    };
+  }, []);
+
+  // Load resources from localStorage and Firestore
   useEffect(() => {
     const loadResources = () => {
       try {
-        const raw = localStorage.getItem("xtr_resources");
-        const list = raw ? JSON.parse(raw) : [];
-        const names = (Array.isArray(list) ? list : [])
-          .filter((item: any) => item && typeof item.name === "string" && item.name.trim().length > 0)
-          .map((item: any) => item.name.trim());
-        const uniqueNames = Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
-        setResourceNames(uniqueNames);
-      } catch {
-        setResourceNames([]);
+        // Try localStorage first
+        const localResources = localStorage.getItem('xtr_resources');
+        if (localResources) {
+          const parsed = JSON.parse(localResources);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const activeResources = parsed
+              .filter((r: any) => r.status === 'active')
+              .map((r: any) => ({
+                id: r.id,
+                name: r.name,
+                role: r.role || '',
+                department: r.department || '',
+                email: r.email || '',
+                status: r.status || 'active'
+              }));
+            setResources(activeResources);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error loading resources:', error);
       }
     };
 
     loadResources();
 
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === "xtr_resources") {
+    // Listen for storage changes
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'xtr_resources') {
         loadResources();
       }
     };
 
-    const handleBroadcast = (_event: Event) => {
-      loadResources();
-    };
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener("xtr-resources-updated", handleBroadcast);
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener("xtr-resources-updated", handleBroadcast);
-    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  const newProjectAssigneeOptions = React.useMemo(
-    () => (resourceNames.length > 0 ? resourceNames : fallbackAssigneeOptions),
-    [resourceNames],
-  );
-
-  const editingAssigneeOptions = React.useMemo(() => {
-    const base = resourceNames.length > 0 ? resourceNames : fallbackAssigneeOptions;
-    const extras = editingProject?.assignees ?? [];
-    return Array.from(new Set([...base, ...extras]));
-  }, [resourceNames, editingProject?.assignees]);
-  const monthlyCalendar = React.useMemo(
-    () => buildMonthlyCalendar(columns ?? kanbanColumns, calendarMonthDate),
-    [columns, calendarMonthDate],
-  );
-
-  const projects = [];
-
-  // On-field site visit data (from completed assessments ready for project creation)
-  const onFieldSiteVisits = [];
-
-  // Kanban columns with projects
-  const kanbanColumns = [
-    {
-      id: "new",
-      title: "New",
-      color: "border-gray-300",
-      projects: []
-    },
-    {
-      id: "site-inspection",
-      title: "Site Inspection",
-      color: "border-purple-300",
-      projects: []
-    },
-        {
-      id: "stage-1",
-      title: "Stage 1",
-      color: "border-orange-300",
-      projects: []
-    },
-    {
-      id: "stage-2",
-      title: "Stage 2",
-      color: "border-yellow-300",
-      projects: []
-    },
-    {
-      id: "full-system",
-      title: "Full System",
-      color: "border-green-300",
-      projects: []
-    },
-    {
-      id: "canceled",
-      title: "Canceled",
-      color: "border-red-300",
-      projects: []
-    },
-    {
-      id: "to-be-scheduled",
-      title: "To Be Scheduled",
-      color: "border-blue-300",
-      projects: [
-        {
-          id: 2,
-          title: "Sample Project",
-          assignee: "TB",
-          assignees: ["Team B", "Mike Chen", "Lisa Anderson"],
-          date: "Nov 5 - Nov 10",
-          tags: ["15kW System", "Commercial"],
-          priority: "high" as const,
-          value: "$24,000",
-          status: "to-be-scheduled",
-          customerName: "John Johnson",
-          customerEmail: "john@johnson.com",
-          customerContact: "+61 400 789 012",
-          customerAddress: "456 Business Ave, Sydney NSW 2000",
-          systemType: "pv-battery",
-          systemSize: "15",
-          comments: []
+  // Fetch closed-won leads from Lead CRM and add to "New" column
+  useEffect(() => {
+    const loadClosedWonLeads = () => {
+      try {
+        // Get leads from localStorage - check both possible keys
+        let leadsStateRaw = localStorage.getItem('xtr_leads_state_columns');
+        if (!leadsStateRaw) {
+          leadsStateRaw = localStorage.getItem('leads_state');
         }
-      ]
-    },
-    {
-      id: "scheduled",
-      title: "Scheduled",
-      color: "border-green-300",
-      projects: [
-        {
-          id: 3,
-          title: "Sample Project 2",
-          assignee: "TA",
-          assignees: ["Team A", "Emily Davis"],
-          date: "Oct 20 - Oct 22",
-          tags: ["3.5kW System", "Residential"],
-          priority: "high" as const,
-          value: "$6,200",
-          status: "scheduled",
-          customerName: "Sarah Smith",
-          customerEmail: "sarah@smith.com",
-          customerContact: "+61 400 555 123",
-          customerAddress: "789 Oak St, Brisbane QLD 4000",
-          systemType: "pv-only",
-          systemSize: "3.5",
-          comments: []
-        }
-      ]
-    },
-    {
-      id: "to-be-rescheduled",
-      title: "To Be Rescheduled",
-      color: "border-orange-300",
-      projects: [
-        {
-          id: 4,
-          title: "Sample Project 3",
-          assignee: "TB",
-          date: "Oct 23 - Oct 27",
-          tags: ["20kW System", "Industrial"],
-          priority: "high" as const,
-          value: "$32,000",
-          status: "to-be-rescheduled",
-          customerName: "Michael Brown",
-          customerEmail: "michael@brown.com",
-          customerContact: "+61 400 666 789",
-          customerAddress: "321 Industrial Rd, Perth WA 6000",
-          systemType: "pv-battery-ev-charger",
-          systemSize: "20",
-          comments: []
-        }
-      ]
-    },
-    {
-      id: "completed",
-      title: "Installation Completed",
-      color: "border-green-500",
-      projects: [
-        {
-          id: 5,
-          title: "Davis Home",
-          assignee: "TA",
-          date: "Oct 28 - Oct 30",
-          tags: ["4kW System", "Residential"],
-          priority: "medium" as const,
-          value: "$7,100",
-          status: "completed",
-          customerName: "Emily Davis",
-          customerEmail: "emily@davis.com",
-          customerContact: "+61 400 777 456",
-          customerAddress: "654 Pine Ave, Adelaide SA 5000",
-          systemType: "pv-only",
-          systemSize: "4",
-          comments: []
-        }
-      ]
-    },
-    {
-      id: "ces-certificate-applied",
-      title: "CES Certificate Applied",
-      color: "border-purple-300",
-      projects: [
-        {
-          id: 6,
-          title: "Anderson Villa",
-          assignee: "TB",
-          date: "Oct 10 - Oct 15",
-          tags: ["6kW System", "Residential"],
-          priority: "low" as const,
-          value: "$10,500",
-          status: "ces-certificate-applied",
-          customerName: "Robert Anderson",
-          customerEmail: "robert@anderson.com",
-          customerContact: "+61 400 888 321",
-          customerAddress: "987 Villa Dr, Gold Coast QLD 4217",
-          systemType: "pv-battery",
-          systemSize: "6",
-          comments: []
-        }
-      ]
-    },
-    {
-      id: "ces-certificate-received",
-      title: "CES Certificate Received",
-      color: "border-indigo-300",
-      projects: [
-        {
-          id: 7,
-          title: "Wilson Office",
-          assignee: "TA",
-          date: "Oct 5 - Oct 9",
-          tags: ["8kW System", "Commercial"],
-          priority: "low" as const,
-          value: "$14,200",
-          status: "ces-certificate-received",
-          customerName: "Lisa Wilson",
-          customerEmail: "lisa@wilson.com",
-          customerContact: "+61 400 999 654",
-          customerAddress: "147 Office Blvd, Canberra ACT 2600",
-          systemType: "pv-only",
-          systemSize: "8",
-          comments: []
-        }
-      ]
-    },
-    {
-      id: "ces-certificate-submitted",
-      title: "CES Certificate Submitted",
-      color: "border-teal-500",
-      projects: [
-        {
-          id: 8,
-          title: "Thompson Retail",
-          assignee: "TC",
-          date: "Sep 25 - Sep 30",
-          tags: ["12kW System", "Commercial"],
-          priority: "medium" as const,
-          value: "$18,500",
-          status: "ces-certificate-submitted",
-          customerName: "David Thompson",
-          customerEmail: "david@thompson.com",
-          customerContact: "+61 400 111 987",
-          customerAddress: "258 Retail St, Darwin NT 0800",
-          systemType: "pv-battery",
-          systemSize: "12",
-          comments: []
-        }
-      ]
-    },
-    {
-      id: "grid-connect-initiated",
-      title: "Grid Connect Initiated",
-      color: "border-cyan-300",
-      projects: [
-        {
-          id: 9,
-          title: "Green Energy House",
-          assignee: "TC",
-          date: "Nov 1 - Nov 5",
-          tags: ["7kW System", "Residential"],
-          priority: "medium" as const,
-          value: "$12,800",
-          status: "grid-connect-initiated",
-          customerName: "Jennifer Green",
-          customerEmail: "jennifer@green.com",
-          customerContact: "+61 400 222 333",
-          customerAddress: "456 Green St, Melbourne VIC 3001",
-          systemType: "pv-only",
-          systemSize: "7",
-          comments: []
-        }
-      ]
-    },
-    {
-      id: "grid-connection-completed",
-      title: "Grid Connection Completed",
-      color: "border-emerald-400",
-      projects: [
-        {
-          id: 10,
-          title: "Solar Solutions Office",
-          assignee: "TA",
-          date: "Oct 15 - Oct 20",
-          tags: ["10kW System", "Commercial"],
-          priority: "high" as const,
-          value: "$18,000",
-          status: "grid-connection-completed",
-          customerName: "Mark Solutions",
-          customerEmail: "mark@solutions.com",
-          customerContact: "+61 400 444 555",
-          customerAddress: "789 Business Park, Sydney NSW 2001",
-          systemType: "pv-battery",
-          systemSize: "10",
-          comments: []
-        }
-      ]
-    },
-    {
-      id: "system-handover",
-      title: "System Handover",
-      color: "border-violet-400",
-      projects: [
-        {
-          id: 11,
-          title: "Eco Friendly Villa",
-          assignee: "TB",
-          date: "Oct 8 - Oct 12",
-          tags: ["8kW System", "Residential"],
-          priority: "low" as const,
-          value: "$15,200",
-          status: "system-handover",
-          customerName: "Anna Eco",
-          customerEmail: "anna@eco.com",
-          customerContact: "+61 400 666 777",
-          customerAddress: "321 Eco Ave, Brisbane QLD 4001",
-          systemType: "pv-battery-ev-charger",
-          systemSize: "8",
-          comments: []
-        }
-      ]
-    },
-    {
-      id: "done",
-      title: "Done",
-      color: "border-green-600",
-      projects: [
-        {
-          id: 12,
-          title: "Smart Home Project",
-          assignee: "TC",
-          date: "Sep 20 - Sep 25",
-          tags: ["12kW System", "Residential"],
-          priority: "completed" as const,
-          value: "$22,000",
-          status: "done",
-          customerName: "Tom Smart",
-          customerEmail: "tom@smart.com",
-          customerContact: "+61 400 888 999",
-          customerAddress: "654 Smart St, Perth WA 6001",
-          systemType: "pv-battery",
-          systemSize: "12",
-          comments: []
-        }
-      ]
-    }
-  ];
+        if (!leadsStateRaw) return;
 
-  const team = [];
+        const leadsData = JSON.parse(leadsStateRaw);
+        // Handle both formats: { columns: [...] } or just [...]
+        const leadsState = Array.isArray(leadsData) ? leadsData : (leadsData?.columns || []);
+        if (!Array.isArray(leadsState)) return;
 
-  const weeklySchedule = [];
+        // Find all closed-won leads
+        const closedWonLeads: any[] = [];
+        leadsState.forEach((column: any) => {
+          if (column.id === 'closed-won' && Array.isArray(column.leads)) {
+            closedWonLeads.push(...column.leads);
+          }
+        });
 
-  // Handler functions
-  const handleExportSchedule = () => {
-    setShowExportDialog(true);
-  };
+        if (closedWonLeads.length === 0) return;
 
-  const handleScheduleNewProject = () => {
-    setShowNewProjectDialog(true);
-  };
+        // Convert closed-won leads to projects and add to "new" status
+        // Use functional update to get current projects state
+        setProjects(prev => {
+          const existingProjectIds = new Set(prev.map(p => p.id));
+          // Also track by name + email/address to prevent duplicates
+          const existingCombinations = new Set<string>();
+          prev.forEach((p: Project) => {
+            const name = (p.name || '').toLowerCase().trim();
+            const email = (p.projectDetails?.additionalInfo?.customerEmail || 
+                          p.projectSnapshot?.customerEmail || 
+                          p.leadData?.tags?.find((t: string) => t.includes('@')) || 
+                          '').toLowerCase().trim();
+            const address = (p.projectDetails?.additionalInfo?.customerAddress || 
+                            p.projectSnapshot?.customerAddress || 
+                            p.leadData?.company || 
+                            '').toLowerCase().trim();
+            const key = `${name}|${email}|${address}`;
+            if (key && key !== '||') {
+              existingCombinations.add(key);
+            }
+          });
+          
+          const newProjects: Project[] = [];
 
-  const handleProjectClick = (project) => {
-    setSelectedProject(project);
-    setShowProjectDetails(true);
-  };
+          closedWonLeads.forEach((lead: any) => {
+            // Skip if already exists as a project by ID
+            if (existingProjectIds.has(lead.id)) return;
+            
+            // Also check by name + email/address combination
+            const leadName = (lead.title || lead.company || '').toLowerCase().trim();
+            const leadEmail = (lead.tags?.find((t: string) => t.includes('@')) || '').toLowerCase().trim();
+            const leadAddr = (lead.company || lead.projectDetails?.propertyInfo?.propertyAddress || '').toLowerCase().trim();
+            const leadKey = `${leadName}|${leadEmail}|${leadAddr}`;
+            
+            if (leadKey && leadKey !== '||' && existingCombinations.has(leadKey)) {
+              console.log('Skipping duplicate lead:', lead.title || lead.company);
+              return;
+            }
 
-  const handleAddProject = (columnId) => {
-    setNewProject({ ...newProject, status: columnId });
-    setShowNewProjectDialog(true);
-  };
+            // Get site visit data - check multiple sources
+            let siteVisitData = null;
+            try {
+              // First, check if lead has siteVisit attached directly (most reliable)
+              if ((lead as any).siteVisit) {
+                siteVisitData = (lead as any).siteVisit;
+              }
+              
+              // Also check projectSnapshot which might contain site visit data
+              if (!siteVisitData && lead.projectSnapshot?.siteVisit) {
+                siteVisitData = lead.projectSnapshot.siteVisit;
+              }
+              
+              // Try different localStorage keys
+              if (!siteVisitData) {
+                const keys = ['xtr_site_visits', 'site_visits', 'sales_site_visits'];
+                for (const key of keys) {
+                  const siteVisitsRaw = localStorage.getItem(key);
+                  if (siteVisitsRaw) {
+                    const siteVisits = JSON.parse(siteVisitsRaw);
+                    if (Array.isArray(siteVisits)) {
+                      // More flexible matching - case insensitive, partial matches
+                      const leadTitleLower = (lead.title || '').toLowerCase().trim();
+                      const leadCompanyLower = (lead.company || '').toLowerCase().trim();
+                      const leadEmail = lead.tags?.find((t: string) => t.includes('@'))?.toLowerCase().trim() || '';
+                      
+                      siteVisitData = siteVisits.find((sv: any) => {
+                        const svName = (sv.customerName || '').toLowerCase().trim();
+                        const svEmail = (sv.customerEmail || '').toLowerCase().trim();
+                        const svAddr = (sv.propertyAddress || '').toLowerCase().trim();
+                        const leadAddr = (lead.projectDetails?.propertyInfo?.propertyAddress || '').toLowerCase().trim();
+                        
+                        return svName === leadTitleLower || 
+                               svName === leadCompanyLower ||
+                               svEmail === leadEmail ||
+                               (svEmail && leadEmail && svEmail === leadEmail) ||
+                               (svName && leadTitleLower && svName.includes(leadTitleLower)) ||
+                               (svName && leadCompanyLower && svName.includes(leadCompanyLower)) ||
+                               (svAddr && leadAddr && svAddr === leadAddr);
+                      });
+                      if (siteVisitData) break;
+                    }
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error loading site visit data:', error);
+            }
 
-  const handleStatsClick = (type) => {
-    setShowStatsDialog(true);
-  };
+            // Get on-field assessment data - check multiple sources
+            let onFieldData = null;
+            try {
+              // First, check if lead has onField attached directly
+              if ((lead as any).onField) {
+                onFieldData = (lead as any).onField;
+              }
+              
+              // Also check projectSnapshot which might contain on-field data
+              if (!onFieldData && lead.projectSnapshot?.onField) {
+                onFieldData = lead.projectSnapshot.onField;
+              }
+              
+              // Try different localStorage keys
+              if (!onFieldData) {
+                const keys = ['xtr_onfield_assessments', 'onfield_assessments', 'onfield_site_visits'];
+                for (const key of keys) {
+                  const onFieldRaw = localStorage.getItem(key);
+                  if (onFieldRaw) {
+                    const onFieldAssessments = JSON.parse(onFieldRaw);
+                    if (Array.isArray(onFieldAssessments)) {
+                      // More flexible matching - case insensitive, partial matches
+                      const leadTitleLower = (lead.title || '').toLowerCase().trim();
+                      const leadCompanyLower = (lead.company || '').toLowerCase().trim();
+                      const leadEmail = lead.tags?.find((t: string) => t.includes('@'))?.toLowerCase().trim() || '';
+                      
+                      onFieldData = onFieldAssessments.find((of: any) => {
+                        const ofName = (of.customerName || '').toLowerCase().trim();
+                        const ofEmail = (of.customerEmail || '').toLowerCase().trim();
+                        const ofAddr = (of.propertyAddress || '').toLowerCase().trim();
+                        const leadAddr = (lead.projectDetails?.propertyInfo?.propertyAddress || '').toLowerCase().trim();
+                        
+                        return ofName === leadTitleLower || 
+                               ofName === leadCompanyLower ||
+                               ofEmail === leadEmail ||
+                               (ofEmail && leadEmail && ofEmail === leadEmail) ||
+                               (ofName && leadTitleLower && ofName.includes(leadTitleLower)) ||
+                               (ofName && leadCompanyLower && ofName.includes(leadCompanyLower)) ||
+                               (ofAddr && leadAddr && ofAddr === leadAddr);
+                      });
+                      if (onFieldData) break;
+                    }
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error loading on-field assessment data:', error);
+            }
 
-  const handleTeamMemberClick = (member) => {
-    setSelectedTeamMember(member);
-    setShowTeamMemberDialog(true);
-  };
+            // Create project from lead with all details
+            // Prioritize projectSnapshot if available (most complete data)
+            const snap = lead.projectSnapshot || {};
+            const projDetails = lead.projectDetails || {};
+            
+            // Get project name - ensure it's valid
+            const projectName = snap.title || lead.title || lead.company || snap.customerName || '';
+            if (!projectName || projectName.trim() === '' || projectName.trim().length < 2) {
+              console.log('Skipping lead with invalid name:', lead.id, lead.title, lead.company);
+              return;
+            }
+            
+            const project: Project = {
+              id: lead.id || snap.id || `lead-${Date.now()}-${Math.random()}`,
+              name: projectName.trim(),
+              priority: lead.priority || 'medium',
+              systemSize: snap.systemInfo?.systemSize || 
+                         projDetails?.systemInfo?.systemSize || 
+                         projDetails?.systemSize || 
+                         lead.tags?.find((t: string) => t.includes('kW')) || 
+                         'Not specified',
+              type: (snap.clientType || (projDetails?.clientType === 'Commercial' ? 'Commercial' :
+                    projDetails?.clientType === 'Industrial' ? 'Industrial' : 'Residential')) as ProjectType,
+              cost: snap.price || lead.value || '$0',
+              startDate: snap.startDate?.slice(0, 10) || 
+                        projDetails?.projectTimeline?.startDate?.slice(0, 10) || 
+                        lead.date || 
+                        new Date().toISOString().slice(0, 10),
+              endDate: projDetails?.projectTimeline?.expectedCompletion?.slice(0, 10) || 
+                      projDetails?.projectTimeline?.installationDate?.slice(0, 10) || 
+                      '',
+              assignee: (Array.isArray(snap.teamAssignment?.projectManager) 
+                         ? snap.teamAssignment.projectManager[0] 
+                         : snap.teamAssignment?.projectManager) ||
+                       (Array.isArray(projDetails?.teamAssignment?.projectManager) 
+                         ? projDetails.teamAssignment.projectManager[0] 
+                         : projDetails?.teamAssignment?.projectManager) ||
+                       lead.assignee || 
+                       '',
+              status: 'new' as ProjectStatus,
+              // Store all lead data
+              leadData: {
+                title: lead.title,
+                company: lead.company,
+                value: lead.value,
+                date: lead.date,
+                tags: lead.tags,
+                assignee: lead.assignee,
+                description: lead.description,
+                comments: lead.comments,
+              },
+              // Merge projectDetails and projectSnapshot to ensure nothing is lost
+              projectDetails: snap.id ? {
+                // Use projectSnapshot data as primary, fallback to projectDetails
+                systemType: snap.systemType || projDetails?.systemType,
+                clientType: snap.clientType || projDetails?.clientType,
+                propertyInfo: snap.propertyInfo || projDetails?.propertyInfo,
+                utilityInfo: snap.utilityInfo || projDetails?.utilityInfo,
+                systemInfo: snap.systemInfo || projDetails?.systemInfo,
+                additionalInfo: snap.additionalInfo || projDetails?.additionalInfo,
+                projectTimeline: snap.projectTimeline || projDetails?.projectTimeline,
+                teamAssignment: snap.teamAssignment || projDetails?.teamAssignment,
+                projectNotes: snap.notes || projDetails?.projectNotes,
+              } : (projDetails ? { ...projDetails } : undefined),
+              siteVisit: siteVisitData || snap.siteVisit,
+              onFieldAssessment: onFieldData || snap.onField,
+              // Store complete projectSnapshot (most important - contains all data)
+              projectSnapshot: lead.projectSnapshot || snap,
+            };
 
-  const handleAvailabilityClick = (member, day, availability) => {
-    setSelectedAvailability({ member, day, availability });
-    setShowAvailabilityDialog(true);
-  };
+            // Track this combination to prevent duplicates
+            const projName = (project.name || '').toLowerCase().trim();
+            const projEmail = (project.projectDetails?.additionalInfo?.customerEmail || 
+                              project.projectSnapshot?.customerEmail || 
+                              project.leadData?.tags?.find((t: string) => t.includes('@')) || 
+                              '').toLowerCase().trim();
+            const projAddr = (project.projectDetails?.additionalInfo?.customerAddress || 
+                            project.projectSnapshot?.customerAddress || 
+                            project.leadData?.company || 
+                            '').toLowerCase().trim();
+            const projKey = `${projName}|${projEmail}|${projAddr}`;
+            if (projKey && projKey !== '||') {
+              existingCombinations.add(projKey);
+            }
+            
+            newProjects.push(project);
+          });
 
-  const handleCalendarNavigation = (direction) => {
-    const delta = direction === "next" ? 1 : -1;
-
-    if (calendarViewType === "monthly") {
-      setCalendarMonthDate((previous) => {
-        const next = new Date(previous.getFullYear(), previous.getMonth() + delta, 1);
-        next.setHours(0, 0, 0, 0);
-        return next;
-      });
-    } else {
-      setCalendarWeekStart((previous) => {
-        const next = new Date(previous);
-        next.setDate(next.getDate() + delta * 7);
-        next.setHours(0, 0, 0, 0);
-        return next;
-      });
-    }
-  };
-
-  const handleScheduleItemClick = (scheduleItem) => {
-    setSelectedScheduleItem(scheduleItem);
-    setShowScheduleDetails(true);
-  };
-
-  const handleEditSchedule = () => {
-    setEditingScheduleItem({ ...selectedScheduleItem });
-    setShowScheduleDetails(false);
-    setShowEditSchedule(true);
-  };
-
-  const handleSaveScheduleChanges = () => {
-    // Here you would typically update the schedule in your data store
-    console.log("Saving schedule changes:", editingScheduleItem);
-    
-    // Update the schedule data (this would normally be done via API call)
-    // For now, we'll just close the dialog
-    setShowEditSchedule(false);
-    setEditingScheduleItem(null);
-    
-    // Show success message
-    alert("Schedule updated successfully!");
-  };
-
-  const handleEditMember = () => {
-    setEditingMember({ ...selectedTeamMember });
-    setShowTeamMemberDialog(false);
-    setShowEditMember(true);
-  };
-
-  const handleSaveMemberChanges = () => {
-    // Here you would typically update the team member in your data store
-    console.log("Saving member changes:", editingMember);
-    
-    // Update the team data (this would normally be done via API call)
-    // For now, we'll just close the dialog
-    setShowEditMember(false);
-    setEditingMember(null);
-    
-    // Show success message
-    alert("Team member updated successfully!");
-  };
-
-  const handleOtherSelection = (field, value) => {
-    setOtherSelections(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const formatTimeDisplay = (time) => {
-    const timeMap = {
-      '09:00': '9:00 AM',
-      '10:00': '10:00 AM',
-      '11:00': '11:00 AM',
-      '12:00': '12:00 PM',
-      '13:00': '1:00 PM',
-      '14:00': '2:00 PM',
-      '15:00': '3:00 PM',
-      '16:00': '4:00 PM',
-      '17:00': '5:00 PM'
+          // Add new projects if any
+          if (newProjects.length > 0) {
+            const updatedProjects = [...prev, ...newProjects];
+            
+            // Save to both localStorage and Firestore
+            saveProjectsToStorage(updatedProjects).then(() => {
+              console.log(`Added ${newProjects.length} new projects from closed-won leads`);
+            });
+            
+            return updatedProjects;
+          }
+          
+          return prev;
+        });
+      } catch (error) {
+        console.error('Error loading closed-won leads:', error);
+      }
     };
-    return timeMap[time] || time;
+
+    // Load on mount
+    loadClosedWonLeads();
+
+    // Listen for updates from Lead CRM
+    const handleLeadsUpdate = () => {
+      loadClosedWonLeads();
+    };
+
+    window.addEventListener('xtr-leads-updated', handleLeadsUpdate);
+    window.addEventListener('xtr-projects-updated', handleLeadsUpdate);
+
+    // Also listen to localStorage changes
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'leads_state') {
+        loadClosedWonLeads();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    // Poll for changes (fallback)
+    const interval = setInterval(loadClosedWonLeads, 5000);
+
+    return () => {
+      window.removeEventListener('xtr-leads-updated', handleLeadsUpdate);
+      window.removeEventListener('xtr-projects-updated', handleLeadsUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
+  }, []); // Run once on mount and cleanup on unmount
+
+  const getPriorityColor = (priority: Priority) => {
+    switch (priority) {
+      case "high":
+        return "bg-red-100 text-red-800 border-red-200";
+      case "medium":
+        return "bg-orange-100 text-orange-800 border-orange-200";
+      case "low":
+        return "bg-gray-100 text-gray-800 border-gray-200";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
+    }
   };
 
-  const handleNewProjectSubmit = () => {
-    // Determine the target column based on job type
-    let targetColumnId = "new"; // Default column
-    let projectStatus = "new"; // Default status
+  // Get color for project status in calendar
+  const getStatusColor = (status: ProjectStatus): { dot: string; bg: string; text: string; hover: string } => {
+    const colorMap: Record<ProjectStatus, { dot: string; bg: string; text: string; hover: string }> = {
+      // In-House Projects
+      "new": { dot: "#6b7280", bg: "bg-gray-100", text: "text-gray-800", hover: "hover:bg-gray-200" },
+      "scheduled": { dot: "#3b82f6", bg: "bg-blue-100", text: "text-blue-800", hover: "hover:bg-blue-200" },
+      "to-be-rescheduled": { dot: "#f59e0b", bg: "bg-amber-100", text: "text-amber-800", hover: "hover:bg-amber-200" },
+      "installation-in-progress": { dot: "#8b5cf6", bg: "bg-purple-100", text: "text-purple-800", hover: "hover:bg-purple-200" },
+      "installation-completed": { dot: "#10b981", bg: "bg-green-100", text: "text-green-800", hover: "hover:bg-green-200" },
+      "ces-certificate-applied": { dot: "#06b6d4", bg: "bg-cyan-100", text: "text-cyan-800", hover: "hover:bg-cyan-200" },
+      "ces-certificate-received": { dot: "#14b8a6", bg: "bg-teal-100", text: "text-teal-800", hover: "hover:bg-teal-200" },
+      "ces-certificate-submitted": { dot: "#0ea5e9", bg: "bg-sky-100", text: "text-sky-800", hover: "hover:bg-sky-200" },
+      "grid-connection-initiated": { dot: "#6366f1", bg: "bg-indigo-100", text: "text-indigo-800", hover: "hover:bg-indigo-200" },
+      "grid-connection-completed": { dot: "#a855f7", bg: "bg-violet-100", text: "text-violet-800", hover: "hover:bg-violet-200" },
+      "system-handover": { dot: "#ec4899", bg: "bg-pink-100", text: "text-pink-800", hover: "hover:bg-pink-200" },
+      "done": { dot: "#059669", bg: "bg-emerald-100", text: "text-emerald-800", hover: "hover:bg-emerald-200" },
+      // Retailer Projects
+      "retailer-new": { dot: "#6b7280", bg: "bg-gray-100", text: "text-gray-800", hover: "hover:bg-gray-200" },
+      "site-inspection": { dot: "#f97316", bg: "bg-orange-100", text: "text-orange-800", hover: "hover:bg-orange-200" },
+      "stage-one": { dot: "#3b82f6", bg: "bg-blue-100", text: "text-blue-800", hover: "hover:bg-blue-200" },
+      "stage-two": { dot: "#8b5cf6", bg: "bg-purple-100", text: "text-purple-800", hover: "hover:bg-purple-200" },
+      "full-system": { dot: "#10b981", bg: "bg-green-100", text: "text-green-800", hover: "hover:bg-green-200" },
+      "canceled": { dot: "#ef4444", bg: "bg-red-100", text: "text-red-800", hover: "hover:bg-red-200" },
+      "retailer-scheduled": { dot: "#3b82f6", bg: "bg-blue-100", text: "text-blue-800", hover: "hover:bg-blue-200" },
+      "retailer-to-be-rescheduled": { dot: "#f59e0b", bg: "bg-amber-100", text: "text-amber-800", hover: "hover:bg-amber-200" },
+      "retailer-installation-in-progress": { dot: "#8b5cf6", bg: "bg-purple-100", text: "text-purple-800", hover: "hover:bg-purple-200" },
+      "retailer-installation-completed": { dot: "#10b981", bg: "bg-green-100", text: "text-green-800", hover: "hover:bg-green-200" },
+      "retailer-ces-certificate-applied": { dot: "#06b6d4", bg: "bg-cyan-100", text: "text-cyan-800", hover: "hover:bg-cyan-200" },
+      "retailer-ces-certificate-received": { dot: "#14b8a6", bg: "bg-teal-100", text: "text-teal-800", hover: "hover:bg-teal-200" },
+      "retailer-ces-certificate-submitted": { dot: "#0ea5e9", bg: "bg-sky-100", text: "text-sky-800", hover: "hover:bg-sky-200" },
+      "retailer-done": { dot: "#059669", bg: "bg-emerald-100", text: "text-emerald-800", hover: "hover:bg-emerald-200" },
+      // Legacy statuses
+      "not-started": { dot: "#6b7280", bg: "bg-gray-100", text: "text-gray-800", hover: "hover:bg-gray-200" },
+      "in-progress": { dot: "#8b5cf6", bg: "bg-purple-100", text: "text-purple-800", hover: "hover:bg-purple-200" },
+      "inspection": { dot: "#f97316", bg: "bg-orange-100", text: "text-orange-800", hover: "hover:bg-orange-200" },
+      "completed": { dot: "#10b981", bg: "bg-green-100", text: "text-green-800", hover: "hover:bg-green-200" },
+    };
     
-    if (newProject.jobType === "site-inspection") {
-      targetColumnId = "site-inspection";
-      projectStatus = "site-inspection";
-    } else if (newProject.jobType === "stage-1") {
-      targetColumnId = "stage-1";
-      projectStatus = "stage-1";
-    } else if (newProject.jobType === "stage-2") {
-      targetColumnId = "stage-2";
-      projectStatus = "stage-2";
-    } else if (newProject.jobType === "full-system") {
-      targetColumnId = "full-system";
-      projectStatus = "full-system";
+    return colorMap[status] || { dot: "#6b7280", bg: "bg-gray-100", text: "text-gray-800", hover: "hover:bg-gray-200" };
+  };
+
+  // Helper function to validate and filter projects
+  const isValidProject = (p: Project): boolean => {
+    const name = (p.name || '').trim();
+    // Filter out: empty names, "Untitled Project", names less than 2 characters, missing IDs
+    return name && 
+           name !== '' && 
+           name !== 'Untitled Project' && 
+           name.length >= 2 && 
+           p.id && 
+           p.id.trim() !== '' &&
+           !name.toLowerCase().includes('unnamed') &&
+           !name.toLowerCase().includes('untitled');
+  };
+
+  // Helper function to save projects to both localStorage and Firestore
+  const saveProjectsToStorage = async (projectsToSave: Project[]) => {
+    try {
+      // Filter valid projects before saving - remove all invalid/unnamed projects
+      const validProjects = projectsToSave.filter(isValidProject);
+      
+      if (validProjects.length < projectsToSave.length) {
+        const removedCount = projectsToSave.length - validProjects.length;
+        console.log(`[saveProjectsToStorage] Removed ${removedCount} invalid/unnamed project(s) before saving`);
+      }
+      
+      // Save to localStorage
+      localStorage.setItem('xtr_projects', JSON.stringify(validProjects));
+      console.log(`[ProjectManagement] Saved ${validProjects.length} projects to localStorage`);
+      
+      // Save to Firestore if enabled
+      if (firebaseEnabled && db) {
+        // Don't use isSyncingRef here as it prevents saves during sync
+        try {
+          const savePromises = validProjects.map(async (p) => {
+            if (p.id && p.id.trim() !== '') {
+              try {
+                await setDoc(doc(db, 'projects', p.id), p as any, { merge: true });
+                console.log(`[ProjectManagement] Saved project to Firestore: ${p.id} - ${p.name}`);
+              } catch (err) {
+                console.error(`Error saving project ${p.id} to Firestore:`, err);
+              }
+            }
+          });
+          
+          await Promise.all(savePromises);
+          console.log(`[ProjectManagement] Synced ${validProjects.length} projects to Firestore`);
+        } catch (error) {
+          console.error('[ProjectManagement] Error syncing projects to Firestore:', error);
+        }
+      } else {
+        console.warn('[ProjectManagement] Firestore not enabled - projects saved to localStorage only');
+      }
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('xtr-projects-updated'));
+    } catch (error) {
+      console.error('Error saving projects:', error);
+    }
+  };
+
+  const getProjectsByStatus = (status: ProjectStatus) => {
+    // Debug: Log all projects before filtering
+    if (status === "stage-one") {
+      console.log(`[getProjectsByStatus] ALL projects before filtering (${projects.length}):`, 
+        projects.map(p => ({ id: p.id, name: p.name, status: p.status, nameLength: (p.name || '').length }))
+      );
+    }
+    
+    const filtered = projects.filter((p) => {
+      // Filter by status
+      if (p.status !== status) {
+        if (status === "stage-one" && (p.name || '').toLowerCase().includes('rishi')) {
+          console.log(`[getProjectsByStatus] Rishi project status mismatch:`, { id: p.id, name: p.name, projectStatus: p.status, requestedStatus: status });
+        }
+        return false;
+      }
+      
+      // Filter out invalid/nameless projects using validation function
+      if (!isValidProject(p)) {
+        console.log(`[getProjectsByStatus] Filtering out invalid/unnamed project:`, { id: p.id, name: p.name, status: p.status });
+        return false;
+      }
+      
+      return true;
+    });
+    
+    // Debug logging for retailer projects
+    if (status === "stage-one" || status === "stage-two" || status === "full-system" || status === "site-inspection") {
+      console.log(`[getProjectsByStatus] Status: ${status}, Found ${filtered.length} projects:`, filtered.map(p => ({ id: p.id, name: p.name, status: p.status })));
+      
+      // Check if Scott Megens should be here
+      const scottInAll = projects.find(p => (p.name || '').toLowerCase().includes('scott') || (p.name || '').toLowerCase().includes('megens'));
+      if (scottInAll && status === "stage-one") {
+        console.log(`[getProjectsByStatus] Scott Megens project exists in projects array:`, { 
+          id: scottInAll.id, 
+          name: scottInAll.name, 
+          projectStatus: scottInAll.status, 
+          requestedStatus: status,
+          matches: scottInAll.status === status
+        });
+      }
+      
+      // Check if Rishi should be here
+      const rishiInAll = projects.find(p => (p.name || '').toLowerCase().includes('rishi'));
+      if (rishiInAll && status === "stage-one") {
+        console.log(`[getProjectsByStatus] Rishi project exists in projects array:`, { 
+          id: rishiInAll.id, 
+          name: rishiInAll.name, 
+          projectStatus: rishiInAll.status, 
+          requestedStatus: status,
+          matches: rishiInAll.status === status
+        });
+      }
+    }
+    
+    return filtered;
+  };
+
+  const handleAddProject = () => {
+    // For retailer site inspection, require key fields
+    if (newProject.status === "site-inspection") {
+      if (!newProject.customerName || !newProject.clientType || !newProject.systemType) {
+        alert("Please fill in Customer Name, Client Type and System Type");
+        return;
+      }
+    } else if (newProject.status === "retailer-new") {
+      // For retailer-new, require customer name, job type, system type, and price
+      if (!newProject.customerName || !newProject.jobType || !newProject.systemType || !newProject.priceAud) {
+        alert("Please fill in Customer Name, Job Type, System Type, and Price (AUD)");
+        return;
+      }
+      // Also require system-specific fields based on system type
+      const hasPV = ["Only PV","PV+Battery","PV+Battery+EV Charger","PV+EV Charger"].includes(newProject.systemType);
+      if (hasPV && !newProject.pvSystemSizeKw) {
+        alert("Please fill in PV System Size (kW)");
+        return;
+      }
+    } else if (!newProject.name || !newProject.systemSize || !newProject.cost) {
+      alert("Please fill in all required fields (Name, System Size, Cost)");
+      return;
     }
 
-    // Create the new project object
-    const newProjectData = {
-      id: Date.now(), // Generate unique ID
-      title: newProject.title || `${newProject.customerName} - ${newProject.jobType}`,
-      assignee: newProject.assignees.length > 0 ? newProject.assignees[0].split(' ').map(n => n[0]).join('') : "PM",
-      assignees: newProject.assignees.length > 0 ? newProject.assignees : ["Project Manager"],
-      date: newProject.startDate && newProject.endDate ? 
-            `${new Date(newProject.startDate).toLocaleDateString()} - ${new Date(newProject.endDate).toLocaleDateString()}` : 
-            "TBD",
-      startDate: newProject.startDate || null,
-      endDate: newProject.endDate || null,
-      tags: [
-        newProject.systemSize ? `${newProject.systemSize}kW System` : "System",
-        newProject.clientType === "builder" ? "Builder" : "Residential"
-      ],
-      priority: newProject.priority || "medium",
-      value: newProject.value || "TBD",
+    // Map job type to status for retailer-new projects
+    let projectStatus = newProject.status;
+    if (newProject.status === "retailer-new" && newProject.jobType) {
+      const jobTypeToStatus: Record<string, ProjectStatus> = {
+        "Site Inspection": "site-inspection",
+        "Stage One": "stage-one",
+        "Stage Two": "stage-two",
+        "Full System": "full-system"
+      };
+      projectStatus = jobTypeToStatus[newProject.jobType] || newProject.status;
+      console.log('Job type mapping:', { jobType: newProject.jobType, mappedStatus: projectStatus });
+    }
+
+    // Determine if this is a retailer project
+    const isRetailerProject = newProject.status === "retailer-new" || 
+                               projectStatus === "site-inspection" || 
+                               projectStatus === "stage-one" || 
+                               projectStatus === "stage-two" || 
+                               projectStatus === "full-system";
+    
+    const project: Project = {
+      id: newProject.projectId || Date.now().toString(),
+      name: isRetailerProject ? (newProject.customerName || newProject.name) : newProject.name,
+      priority: newProject.priority,
+      systemSize: isRetailerProject ? (newProject.pvSystemSizeKw || newProject.batterySizeKwh || "") : newProject.systemSize,
+      type: newProject.type,
+      cost: isRetailerProject ? newProject.priceAud : newProject.cost,
+      startDate: newProject.startDate,
+      endDate: newProject.endDate,
+      assignee: newProject.assignee,
       status: projectStatus,
-      customerName: newProject.customerName,
+      // Map retailer extended fields into projectDetails
+      projectDetails: (newProject.status === "site-inspection" || newProject.status === "retailer-new" || projectStatus === "site-inspection" || projectStatus === "stage-one" || projectStatus === "stage-two" || projectStatus === "full-system") ? {
+        systemType: newProject.systemType,
+      clientType: newProject.clientType,
+        additionalInfo: {
+          projectId: newProject.projectId,
+          clientName: newProject.clientName,
       customerEmail: newProject.customerEmail,
       customerContact: newProject.customerContact,
       customerAddress: newProject.customerAddress,
-      systemType: newProject.projectType || "pv-only",
-      systemSize: newProject.systemSize,
-      // Job type specific data
-      jobType: newProject.jobType,
-      clientType: newProject.clientType,
-      clientName: newProject.clientName,
-      // Booking information
-      inspectionDate: newProject.inspectionDate,
-      inspectionTime: newProject.inspectionTime,
-      inspectionBooked: newProject.inspectionBooked,
-      stage1Date: newProject.stage1Date,
-      stage1Booked: newProject.stage1Booked,
-      stage2Date: newProject.stage2Date,
-      stage2Booked: newProject.stage2Booked,
-      fullSystemDate: newProject.fullSystemDate,
-      fullSystemBooked: newProject.fullSystemBooked,
-      comments: [
-        {
-          id: `new-${Date.now()}`,
-          text: `Project created with job type: ${newProject.jobType}. ${newProject.clientType ? `Client type: ${newProject.clientType}.` : ''} ${newProject.clientName ? `Client: ${newProject.clientName}.` : ''}`,
-          author: "Project Manager",
-          email: "pm@xtechs.com",
-          timestamp: new Date().toLocaleString()
-        }
-      ]
+          jobType: newProject.jobType || "Site Inspection",
+          siteInspection: newProject.jobType === "Site Inspection" ? {
+            date: newProject.siteInspectionDate,
+            time: newProject.siteInspectionTime,
+          } : undefined,
+          jobDate: ["Stage One", "Stage Two", "Full System"].includes(newProject.jobType) ? newProject.jobDate : undefined,
+          priceAud: newProject.priceAud,
+          location: newProject.location,
+        },
+        systemInfo: {
+          systemSize: newProject.pvSystemSizeKw,
+          inverterSize: newProject.inverterSizeKw,
+          inverterBrand: newProject.inverterBrand,
+          inverterType: newProject.inverterModel,
+          panelBrand: newProject.panelBrand,
+          panelModuleWatts: newProject.panelModuleWatts,
+          batterySize: newProject.batterySizeKwh,
+          batteryBrand: newProject.batteryBrand,
+          batteryModel: newProject.batteryModel,
+          evChargerBrand: newProject.evChargerBrand,
+          evChargerModel: newProject.evChargerModel,
+        },
+        propertyInfo: {
+          houseStorey: newProject.houseStorey === "Other" ? newProject.houseStoreyOther || "Other" : newProject.houseStorey,
+          roofType: newProject.roofType === "Other" ? newProject.roofTypeOther || "Other" : newProject.roofType,
+          meterPhase: newProject.meterPhase,
+          accessSecondStorey: newProject.accessSecondStorey,
+          accessToInverter: newProject.accessToInverter,
+        },
+        utilityInfo: newProject.status === "site-inspection" ? {
+          energyRetailer: newProject.energyRetailer,
+          distributor: newProject.energyDistributor,
+          solarVictoriaEligible: newProject.solarVictoriaEligible,
+          preApprovalNumber: newProject.preApprovalNumber,
+          nmiNumber: newProject.nmiNumber,
+          meterNumber: newProject.meterNumber,
+        } : undefined,
+      } : undefined,
     };
 
-    // Update the kanban columns to add the project to the appropriate column
-    const updatedColumns = kanbanColumns.map(column => {
-      if (column.id === targetColumnId) {
-        return {
-          ...column,
-          projects: [...column.projects, newProjectData]
-        };
-      }
-      return column;
+    const updatedProjects = [...projects, project];
+    console.log('[handleAddProject] Creating project:', { 
+      id: project.id, 
+      name: project.name, 
+      status: project.status, 
+      jobType: newProject.jobType,
+      customerName: newProject.customerName,
+      isRetailerProject 
     });
-
-    // Update the columns state
-    setColumns(updatedColumns);
-
-    console.log("Creating new project with data:", newProjectData);
-    console.log("Adding to column:", targetColumnId);
+    setProjects(updatedProjects);
     
-    alert(`New project created successfully and added to ${targetColumnId.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())} column!`);
+    // Save to both localStorage and Firestore
+    saveProjectsToStorage(updatedProjects).then(() => {
+      console.log('[handleAddProject] Project saved successfully:', { id: project.id, name: project.name, status: project.status });
+    });
     
-    setShowNewProjectDialog(false);
-    setSelectedSystemType("");
-    setOtherSelections({});
     setNewProject({
-      title: "",
-      assignee: "",
-      assignees: [],
+      name: "",
+      priority: "medium",
+      systemSize: "",
+      type: "Residential",
+      cost: "",
       startDate: "",
       endDate: "",
-      priority: "",
-      clientType: "",
-      clientName: "",
-      jobType: "",
-      inspectionDate: "",
-      inspectionTime: "",
-      inspectionBooked: false,
-      stage1Date: "",
-      stage1Time: "",
-      stage1Booked: false,
-      stage2Date: "",
-      stage2Time: "",
-      stage2Booked: false,
-      fullSystemDate: "",
-      fullSystemTime: "",
-      fullSystemBooked: false,
-      systemSize: "",
-      projectType: "",
-      value: "",
-      description: "",
+      assignee: "",
+      status: "new",
+      projectId: "",
       customerName: "",
       customerEmail: "",
       customerContact: "",
       customerAddress: "",
       location: "",
-      houseStorey: "",
-      roofType: "",
-      propertyType: "",
-      accessTo2ndStorey: "",
-      accessToInverter: "",
-      monitoring: "",
-      inverterSize: "",
-      batterySize: "",
-      panelBrand: "",
+      clientType: "",
+      clientName: "",
+      jobType: "",
+      siteInspectionDate: "",
+      siteInspectionTime: "",
+      priceAud: "",
+      systemType: "",
+      pvSystemSizeKw: "",
+      inverterSizeKw: "",
       inverterBrand: "",
+      inverterModel: "",
+      panelBrand: "",
+      panelModuleWatts: "",
+      batterySizeKwh: "",
       batteryBrand: "",
-      evChargerBrand: ""
+      batteryModel: "",
+      evChargerBrand: "",
+      evChargerModel: "",
+      houseStorey: "",
+      houseStoreyOther: "",
+      roofType: "",
+      roofTypeOther: "",
+      meterPhase: "",
+      accessSecondStorey: "",
+      accessToInverter: "",
+      energyRetailer: "",
+      energyDistributor: "",
+      solarVictoriaEligible: "",
+      preApprovalNumber: "",
+      nmiNumber: "",
+      meterNumber: "",
     });
+    setShowNewProjectDialog(false);
+    alert("Project added successfully!");
   };
 
-  const handleExportConfirm = () => {
-    alert("Schedule exported successfully!");
-    setShowExportDialog(false);
-  };
-
-  // Initialize columns state
-  React.useEffect(() => {
-    console.log("Setting columns, total count:", kanbanColumns.length);
-    setColumns(kanbanColumns);
-  }, []);
-
-  // Drag and drop handler
-  const handleDragEnd = (result) => {
-    const { destination, source, draggableId } = result;
-
-    if (!destination) return;
-    if (destination.droppableId === source.droppableId && destination.index === source.index) return;
-
-    const sourceColumn = columns.find(col => col.id === source.droppableId);
-    const destColumn = columns.find(col => col.id === destination.droppableId);
-    const draggedProject = sourceColumn.projects.find(p => p.id.toString() === draggableId);
-
-    // Update project status
-    const updatedProject = { ...draggedProject, status: destination.droppableId };
-
-    // Remove from source
-    const newSourceProjects = sourceColumn.projects.filter(p => p.id.toString() !== draggableId);
+  const handleProjectClick = (project: Project) => {
+    setSelectedProject(project);
+    setSelectedAssignees(project.assignees || (project.assignee ? [project.assignee] : []));
+    setNewComment("");
     
-    // Add to destination
-    const newDestProjects = [...destColumn.projects];
-    newDestProjects.splice(destination.index, 0, updatedProject);
-
-    // Update columns
-    const newColumns = columns.map(col => {
-      if (col.id === source.droppableId) {
-        return { ...col, projects: newSourceProjects };
+    // Load Installation Day data if project is completed
+    if (project.status === "installation-completed" || project.status === "retailer-installation-completed") {
+      try {
+        const checklistKey = `xtr_installation_checklist_${project.id}`;
+        const notesKey = `xtr_installation_notes_${project.id}`;
+        const expensesKey = `xtr_installation_expenses_${project.id}`;
+        const breaksKey = `xtr_installation_breaks_${project.id}`;
+        const customerNotesKey = `xtr_installation_customer_notes_${project.id}`;
+        const jobStatusKey = `xtr_installation_job_status_${project.id}`;
+        const photosKey = `xtr_installation_photos_${project.id}`;
+        
+        const checklist = localStorage.getItem(checklistKey);
+        const notes = localStorage.getItem(notesKey);
+        const expenses = localStorage.getItem(expensesKey);
+        const breaks = localStorage.getItem(breaksKey);
+        const customerNotes = localStorage.getItem(customerNotesKey);
+        const jobStatus = localStorage.getItem(jobStatusKey);
+        const photos = localStorage.getItem(photosKey);
+        
+        setInstallationData({
+          checklist: checklist ? JSON.parse(checklist) : [],
+          checklistNotes: notes ? JSON.parse(notes) : {},
+          expenses: expenses ? JSON.parse(expenses) : [],
+          breaks: breaks ? JSON.parse(breaks) : [],
+          customerNotes: customerNotes || "",
+          jobStatus: jobStatus ? JSON.parse(jobStatus) : { jobStarted: false, jobPaused: false, jobStartTime: null, totalPausedDuration: 0 },
+          photos: photos ? JSON.parse(photos) : []
+        });
+      } catch (error) {
+        console.error('Error loading installation data:', error);
+        setInstallationData(null);
       }
-      if (col.id === destination.droppableId) {
-        return { ...col, projects: newDestProjects };
-      }
-      return col;
-    });
-
-    setColumns(newColumns);
+    } else {
+      setInstallationData(null);
+    }
+    
+    setShowProjectDetailsDialog(true);
   };
 
-  // Enhanced project click handler for editing
-  const handleProjectEditClick = (project) => {
-    setEditingProject(project);
-    setSelectedSystemType(project.systemType || "");
-    setShowProjectDetails(true);
+  const handleEditProject = (project: Project) => {
+    setEditingProject({ ...project });
+    setShowProjectDetailsDialog(false);
+    setShowEditProjectDialog(true);
   };
 
-  // Status change handler
-  const handleStatusChange = (newStatus) => {
-    if (!editingProject) return;
-
-    const newColumns = columns.map(col => ({
-      ...col,
-      projects: col.projects.map(p => 
-        p.id === editingProject.id 
-          ? { ...p, status: newStatus }
-          : p
-      ).filter(p => p.id !== editingProject.id || col.id === newStatus)
-    }));
-
-    // Add project to new column if it's not already there
-    const targetColumn = newColumns.find(col => col.id === newStatus);
-    if (targetColumn && !targetColumn.projects.find(p => p.id === editingProject.id)) {
-      targetColumn.projects.push({ ...editingProject, status: newStatus });
+  const handleSaveEdit = () => {
+    if (!editingProject || !editingProject.name || !editingProject.systemSize || !editingProject.cost) {
+      alert("Please fill in all required fields");
+      return;
     }
 
-    setColumns(newColumns);
-    setEditingProject({ ...editingProject, status: newStatus });
+    setProjects(projects.map(p => p.id === editingProject.id ? editingProject : p));
+    setShowEditProjectDialog(false);
+    setEditingProject(null);
+    setSelectedProject(null);
+    alert("Project updated successfully!");
   };
 
-  // Comment submission handler
-  const handleSubmitComment = () => {
-    if (!commentText.trim() || !editingProject) return;
-
-    const newComment = {
+  // Handle adding comment
+  const handleAddComment = () => {
+    if (!newComment.trim() || !selectedProject) return;
+    
+    const now = new Date();
+    const date = now.toLocaleDateString('en-AU', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    const time = now.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+    
+    const comment: Comment = {
       id: Date.now().toString(),
-      text: commentText,
-      author: "Project Manager", // This would come from auth context
-      email: userEmail,
-      timestamp: new Date().toLocaleString()
+      text: newComment.trim(),
+      author: userName || userEmail || 'Unknown',
+      timestamp: now.toISOString(),
+      date,
+      time,
     };
-
+    
     const updatedProject = {
-      ...editingProject,
-      comments: [...(editingProject.comments || []), newComment]
+      ...selectedProject,
+      comments: [...(selectedProject.comments || []), comment],
     };
-
-    // Update the project in columns
-    const newColumns = columns.map(col => ({
-      ...col,
-      projects: col.projects.map(p => 
-        p.id === editingProject.id ? updatedProject : p
-      )
-    }));
-
-    setColumns(newColumns);
-    setEditingProject(updatedProject);
-    setCommentText("");
+    
+    const updatedProjects = projects.map(p => p.id === selectedProject.id ? updatedProject : p);
+    setProjects(updatedProjects);
+    setSelectedProject(updatedProject);
+    setNewComment("");
+    
+    // Save to both localStorage and Firestore
+    saveProjectsToStorage(updatedProjects);
   };
 
-  // Update project details handler
-  const handleUpdateProject = (updatedData) => {
-    if (!editingProject) return;
-
-    const updatedProject = { ...editingProject, ...updatedData };
-
-    const newColumns = columns.map(col => ({
-      ...col,
-      projects: col.projects.map(p => 
-        p.id === editingProject.id ? updatedProject : p
-      )
-    }));
-
-    setColumns(newColumns);
-    setEditingProject(updatedProject);
+  // Handle assignee change
+  const handleAssigneeChange = (assignees: string[]) => {
+    if (!selectedProject) return;
+    
+    const updatedProject = {
+      ...selectedProject,
+      assignees: assignees,
+      assignee: assignees.length > 0 ? assignees[0] : '', // Keep single assignee for backward compatibility
+    };
+    
+    const updatedProjects = projects.map(p => p.id === selectedProject.id ? updatedProject : p);
+    setProjects(updatedProjects);
+    setSelectedProject(updatedProject);
+    setSelectedAssignees(assignees);
+    
+    // Save to both localStorage and Firestore
+    saveProjectsToStorage(updatedProjects);
   };
 
-  try {
+  const handleStatusChange = (projectId: string, newStatus: ProjectStatus) => {
+    const updatedProjects = projects.map(p => 
+      p.id === projectId ? { ...p, status: newStatus } : p
+    );
+    setProjects(updatedProjects);
+    
+    // Save to both localStorage and Firestore
+    saveProjectsToStorage(updatedProjects).then(() => {
+      // Dispatch event for cross-page updates
+      window.dispatchEvent(new Event('xtr-projects-updated'));
+    });
+    
+    if (selectedProject && selectedProject.id === projectId) {
+      setSelectedProject({ ...selectedProject, status: newStatus });
+    }
+  };
+
+  const handleExportSchedule = () => {
+    // Create CSV content
+    const headers = ["Name", "Priority", "System Size", "Type", "Cost", "Start Date", "End Date", "Assignee", "Status"];
+    const rows = projects.map(p => [
+      p.name,
+      p.priority,
+      p.systemSize,
+      p.type,
+      p.cost,
+      p.startDate,
+      p.endDate,
+      p.assignee,
+      p.status
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
+    ].join("\n");
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `project-schedule-${formatMonthYear(currentMonth).toLowerCase().replace(" ", "-")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    
+    alert("Schedule exported successfully!");
+  };
+
+  const formatMonthYear = (date: Date) => {
+    return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  };
+
+  const navigateMonth = (direction: "prev" | "next") => {
+    setCurrentMonth((prev) => {
+      const newDate = new Date(prev);
+      if (direction === "prev") {
+        newDate.setMonth(newDate.getMonth() - 1);
+      } else {
+        newDate.setMonth(newDate.getMonth() + 1);
+      }
+      return newDate;
+    });
+  };
+
+  const navigateWeek = (direction: "prev" | "next") => {
+    setCurrentWeek((prev) => {
+      const newDate = new Date(prev);
+      if (direction === "prev") {
+        newDate.setDate(newDate.getDate() - 7);
+      } else {
+        newDate.setDate(newDate.getDate() + 7);
+      }
+      return newDate;
+    });
+  };
+
+  const formatWeekRange = (date: Date) => {
+    const startOfWeek = new Date(date);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day;
+    startOfWeek.setDate(diff);
+    
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(endOfWeek.getDate() + 6);
+    
+    const startStr = startOfWeek.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const endStr = endOfWeek.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    return `${startStr} - ${endStr}`;
+  };
+
+  const getWeekDays = (date: Date) => {
+    const startOfWeek = new Date(date);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day;
+    startOfWeek.setDate(diff);
+    
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const dayDate = new Date(startOfWeek);
+      dayDate.setDate(startOfWeek.getDate() + i);
+      days.push(dayDate);
+    }
+    return days;
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
+      {/* Header Section */}
       <div className="flex items-center justify-between">
         <div>
             <h1 className="text-3xl font-bold text-gray-900">Project Management</h1>
-          <p className="text-muted-foreground">Schedule and manage installations</p>
+          <p className="text-gray-600 mt-1">Schedule and manage installations.</p>
         </div>
-        <div className="flex gap-3">
-            <Button variant="outline" onClick={handleExportSchedule}>
-            <CalendarIcon className="w-4 h-4 mr-2" />
+        <div className="flex gap-3 items-center">
+          {firebaseEnabled && db ? (
+            <>
+              <div className="flex items-center gap-2 text-sm text-green-600 cursor-pointer" onClick={() => { setShowSyncStatus(true); checkSyncStatus(); }} title="Click to check sync status">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span>Sync Active</span>
+              </div>
+              <Button variant="outline" onClick={handleManualRefresh} title="Refresh projects from Firestore">
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh Projects
+              </Button>
+              <Button variant="outline" onClick={() => { setShowSyncStatus(true); checkSyncStatus(); }} title="Check sync status between devices">
+                <MessageSquare className="w-4 h-4 mr-2" />
+                Sync Status
+              </Button>
+            </>
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-orange-600">
+              <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+              <span>Local Only (No Sync)</span>
+            </div>
+          )}
+          <Button variant="outline" onClick={handleExportSchedule}>
+            <Download className="w-4 h-4 mr-2" />
             Export Schedule
           </Button>
-            <Button onClick={handleScheduleNewProject}>Schedule New Project</Button>
         </div>
       </div>
 
-      <Tabs defaultValue="kanban">
-        <TabsList>
-          <TabsTrigger value="kanban">Kanban View</TabsTrigger>
-          <TabsTrigger value="calendar">Calendar View</TabsTrigger>
-          <TabsTrigger value="resources">Resource Allocation</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="kanban" className="mt-6 space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Project Timeline</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => handleCalendarNavigation('previous')}>
-                    <ChevronLeft className="w-4 h-4" />
+      {/* View Toggles */}
+      <div className="flex gap-2 border-b pb-4">
+        <Button
+          variant={currentView === "kanban" ? "default" : "ghost"}
+          onClick={() => setCurrentView("kanban")}
+          className={currentView === "kanban" ? "border-2" : ""}
+        >
+          In-House Projects
                   </Button>
-                  <span>{currentMonthLabel}</span>
-                  <Button variant="outline" size="sm" onClick={() => handleCalendarNavigation('next')}>
-                    <ChevronRight className="w-4 h-4" />
+        <Button
+          variant={currentView === "retailer-projects" ? "default" : "ghost"}
+          onClick={() => setCurrentView("retailer-projects")}
+          className={currentView === "retailer-projects" ? "border-2" : ""}
+        >
+          Retailer Projects
+                  </Button>
+        <Button
+          variant={currentView === "calendar" ? "default" : "ghost"}
+          onClick={() => setCurrentView("calendar")}
+          className={currentView === "calendar" ? "border-2" : ""}
+        >
+          Calendar View
                   </Button>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <DragDropContext onDragEnd={handleDragEnd}>
-                <div className="flex gap-4 overflow-x-auto pb-4" key="kanban-columns-12">
-                  {(columns || kanbanColumns).map((column) => {
-                    console.log("Rendering column:", column.title);
-                    return (
-                    <div key={column.id} className="space-y-4 min-w-[280px] flex-shrink-0">
-                    <div className={`border-l-4 ${column.color} pl-3`}>
-                      <div className="flex items-center justify-between mb-2">
-                          <h3 className="text-sm font-semibold truncate">{column.title}</h3>
-                          <Badge variant="secondary" className="ml-2 flex-shrink-0">{column.projects.length}</Badge>
-                      </div>
-                        <p className="text-xs text-muted-foreground">
-                          {column.id === "new" && "New projects awaiting review"}
-                          {column.id === "site-inspection" && "Site inspection scheduled/completed"}
-                          {column.id === "stage-1" && "Stage 1 installation phase"}
-                          {column.id === "stage-2" && "Stage 2 installation phase"}
-                          {column.id === "full-system" && "Full system installation"}
-                          {column.id === "canceled" && "Canceled projects"}
-                          {column.id === "to-be-scheduled" && "Ready for scheduling"}
-                          {column.id === "scheduled" && "Confirmed schedule"}
-                          {column.id === "to-be-rescheduled" && "Schedule changes needed"}
-                          {column.id === "completed" && "Installation completed"}
-                          {column.id === "ces-certificate-applied" && "Certificate applied"}
-                          {column.id === "ces-certificate-received" && "Certificate received"}
-                          {column.id === "ces-certificate-submitted" && "Certificate submitted"}
-                          {column.id === "grid-connect-initiated" && "Grid connection process started"}
-                          {column.id === "grid-connection-completed" && "Grid connection established"}
-                          {column.id === "system-handover" && "System ready for customer handover"}
-                          {column.id === "done" && "Project fully completed"}
-                      </p>
-                    </div>
 
-                      <Droppable droppableId={column.id}>
-                        {(provided, snapshot) => (
-                          <div
-                            {...provided.droppableProps}
-                            ref={provided.innerRef}
-                            className={`space-y-3 min-h-[200px] p-2 rounded-lg transition-colors ${
-                              snapshot.isDraggingOver ? 'bg-blue-50 border-2 border-blue-200' : ''
-                            }`}
-                          >
-                            {column.projects.map((project, index) => (
-                              <Draggable key={project.id} draggableId={project.id.toString()} index={index}>
-                                {(provided, snapshot) => (
-                                  <div
-                                    ref={provided.innerRef}
-                                    {...provided.draggableProps}
-                                    {...provided.dragHandleProps}
-                                    className={`cursor-pointer transition-transform ${
-                                      snapshot.isDragging ? 'rotate-3 shadow-lg' : ''
-                                    }`}
-                                    onClick={() => handleProjectEditClick(project)}
-                                  >
-                        <KanbanCard
-                          title={project.title}
-                          assignee={project.assignee}
-                          date={project.date}
-                          tags={project.tags}
-                          priority={project.priority}
-                          value={project.value}
-                        />
-                                  </div>
-                                )}
-                              </Draggable>
-                      ))}
-                            {provided.placeholder}
-                      
-                      {/* Only show Add Project button for specific columns */}
-                      {!["new", "canceled", "to-be-scheduled", "scheduled", "to-be-rescheduled", "completed", "ces-certificate-applied", "ces-certificate-received", "ces-certificate-submitted", "grid-connect-initiated", "grid-connection-completed", "system-handover", "done"].includes(column.id) && (
-                      <Button 
-                        variant="ghost" 
-                        className="w-full border-2 border-dashed hover:border-solid hover:bg-muted"
-                          onClick={() => handleAddProject(column.id)}
+      {/* In-House Projects Kanban Board */}
+      {currentView === "kanban" && (
+        <div className="overflow-x-auto">
+          <div className="flex gap-4 min-w-max">
+            {inHouseColumns.map((column) => {
+              const columnProjects = getProjectsByStatus(column.id);
+                    return (
+                <div key={column.id} className="space-y-4 w-64 flex-shrink-0">
+                <div className="bg-white rounded-lg border p-4">
+                      <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-gray-900">{column.title}</h3>
+                    <Badge className="bg-green-100 text-green-800 border-green-200 rounded-full">
+                      {columnProjects.length}
+                    </Badge>
+                      </div>
+                  <p className="text-sm text-gray-600 mb-4">{column.description}</p>
+
+                  {/* Project Cards */}
+                  <div className="space-y-3">
+                    {columnProjects.map((project) => (
+                      <Card 
+                        key={project.id} 
+                        className="p-4 hover:shadow-md transition-shadow cursor-pointer"
+                        onClick={() => handleProjectClick(project)}
                       >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Project
-                      </Button>
-                      )}
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between">
+                            <h4 className="font-semibold text-gray-900">{project.name}</h4>
+                            <Badge className={getPriorityColor(project.priority)}>
+                              {project.priority}
+                            </Badge>
+                                  </div>
+                          <p className="text-sm text-gray-700">{project.systemSize}</p>
+                          <p className="text-sm text-gray-600">{project.type}</p>
+                          <div className="flex items-center justify-between pt-2 border-t">
+                            <span className="text-sm font-semibold text-gray-900">{project.cost}</span>
+                            <span className="text-xs text-gray-500">
+                              {project.startDate} - {project.endDate}
+                            </span>
+                  </div>
+                <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-500">Assigned to</span>
+                            <Badge variant="outline" className="text-xs">
+                              {project.assignee}
+                            </Badge>
+                  </div>
+                  </div>
+            </Card>
+                    ))}
+                  </div>
+
                     </div>
-                        )}
-                      </Droppable>
                   </div>
                     );
                   })}
               </div>
-              </DragDropContext>
-            </CardContent>
-          </Card>
-
-          {/* Summary Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleStatsClick('total')}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-muted-foreground">Total Projects</p>
-                    <h3 className="mt-1">12</h3>
-                  </div>
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <CalendarIcon className="w-6 h-6 text-primary" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleStatsClick('in-progress')}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-muted-foreground">In Progress</p>
-                    <h3 className="mt-1">2</h3>
-                  </div>
-                  <div className="w-12 h-12 rounded-full bg-warning/10 flex items-center justify-center">
-                    <Clock className="w-6 h-6 text-warning" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleStatsClick('completed')}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-muted-foreground">Completed</p>
-                    <h3 className="mt-1">2</h3>
-                  </div>
-                  <div className="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center">
-                    <CheckCircle className="w-6 h-6 text-success" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleStatsClick('value')}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-muted-foreground">Total Value</p>
-                    <h3 className="mt-1">$188K</h3>
-                  </div>
-                  <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center">
-                    <DollarSign className="w-6 h-6 text-secondary" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </div>
-        </TabsContent>
+      )}
 
-        <TabsContent value="calendar" className="mt-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <CardTitle>Schedule</CardTitle>
+      {/* Retailer Projects Kanban Board */}
+      {currentView === "retailer-projects" && (
+        <div className="space-y-4">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Retailer Projects</h2>
                 <div className="flex items-center gap-2">
+              <p className="text-gray-600 mr-2">Manage and track retailer-specific projects</p>
                     <Button 
-                      variant={calendarViewType === "weekly" ? "default" : "outline"} 
-                      size="sm"
-                      onClick={() => setCalendarViewType("weekly")}
-                    >
-                      Weekly Schedule
+                type="button"
+                variant="outline"
+                className="h-8 px-2"
+                onClick={() => {
+                  const scroller = document.getElementById("retailer-scroll-container");
+                  if (scroller) scroller.scrollBy({ left: -400, behavior: "smooth" });
+                }}
+                aria-label="Scroll left"
+                title="Scroll left"
+              >
+                <ChevronLeft className="w-4 h-4" />
                     </Button>
                     <Button 
-                      variant={calendarViewType === "monthly" ? "default" : "outline"} 
-                      size="sm"
-                      onClick={() => setCalendarViewType("monthly")}
-                    >
-                      Monthly Schedule
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => handleCalendarNavigation('previous')}>
-                    <ChevronLeft className="w-4 h-4" />
-                  </Button>
-                  <span>{calendarViewType === "weekly" ? currentWeekLabel : currentMonthLabel}</span>
-                  <Button variant="outline" size="sm" onClick={() => handleCalendarNavigation('next')}>
+                type="button"
+                variant="outline"
+                className="h-8 px-2"
+                onClick={() => {
+                  const scroller = document.getElementById("retailer-scroll-container");
+                  if (scroller) scroller.scrollBy({ left: 400, behavior: "smooth" });
+                }}
+                aria-label="Scroll right"
+                title="Scroll right"
+              >
                     <ChevronRight className="w-4 h-4" />
                   </Button>
+                  </div>
+                  </div>
+          <div id="retailer-scroll-container" className="overflow-x-auto pb-4 w-full" style={{ scrollbarWidth: 'thin', WebkitOverflowScrolling: 'touch' }}>
+            <div className="flex gap-4 min-w-max whitespace-nowrap">
+            {retailerColumns.map((column) => {
+              const columnProjects = getProjectsByStatus(column.id);
+              return (
+                <div key={column.id} className="flex-shrink-0 w-80 space-y-4">
+                  <div className="bg-white rounded-lg border p-4 h-full">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="font-semibold text-gray-900">{column.title}</h3>
+                      <Badge className="bg-green-100 text-green-800 border-green-200 rounded-full">
+                        {columnProjects.length}
+                      </Badge>
+                </div>
+                    <p className="text-sm text-gray-600 mb-4">{column.description}</p>
+
+                    {/* Project Cards */}
+                    <div className="space-y-3">
+                      {columnProjects.map((project) => {
+                        // Check if this is a retailer project (stage-one, stage-two, full-system, site-inspection)
+                        const isRetailerProject = ["stage-one", "stage-two", "full-system", "site-inspection"].includes(project.status);
+                        const clientType = project.projectDetails?.clientType || project.projectDetails?.additionalInfo?.clientType;
+                        const clientName = project.projectDetails?.additionalInfo?.clientName;
+                        
+                        return (
+                          <Card 
+                            key={project.id} 
+                            className="p-4 hover:shadow-md transition-shadow cursor-pointer"
+                            onClick={() => handleProjectClick(project)}
+                          >
+                            <div className="space-y-2">
+                              <div className="flex items-start justify-between">
+                                <h4 className="font-semibold text-gray-900">{project.name}</h4>
+                                <Badge className={getPriorityColor(project.priority)}>
+                                  {project.priority}
+                                </Badge>
+                  </div>
+                              {/* Show Client Type and Client Name for retailer projects */}
+                              {isRetailerProject && (clientType || clientName) && (
+                                <div className="space-y-1">
+                                  {clientType && (
+                                    <p className="text-xs text-gray-600">
+                                      <span className="font-medium">Client Type:</span> {clientType}
+                                    </p>
+                                  )}
+                                  {clientName && (
+                                    <p className="text-xs text-gray-600">
+                                      <span className="font-medium">Client Name:</span> {clientName}
+                                    </p>
+                                  )}
+                  </div>
+                              )}
+                              <p className="text-sm text-gray-700">{project.systemSize}</p>
+                              <p className="text-sm text-gray-600">{project.type}</p>
+                              <div className="flex items-center justify-between pt-2 border-t">
+                                <span className="text-sm font-semibold text-gray-900">{project.cost}</span>
+                                <span className="text-xs text-gray-500">
+                                  {project.startDate} - {project.endDate}
+                                </span>
+                </div>
+                <div className="flex items-center justify-between">
+                                <span className="text-xs text-gray-500">Assigned to</span>
+                                <Badge variant="outline" className="text-xs">
+                                  {project.assignee}
+                                </Badge>
+                  </div>
+                  </div>
+            </Card>
+                        );
+                      })}
+                  </div>
+                    {/* + Add Project only for New column */}
+                    {column.id === "retailer-new" && (
+                      <Button
+                        variant="ghost"
+                        className="w-full mt-4 border-2 border-dashed"
+                        onClick={() => {
+                          // Generate Project ID once when opening dialog
+                          const generatedId = `PRJ-${new Date().toISOString().slice(0,10)}-${new Date().getTime().toString().slice(-4)}`;
+                          setNewProject((prev) => ({ ...prev, status: column.id, projectId: generatedId }));
+                          setShowNewProjectDialog(true);
+                        }}
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Project
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          </div>
+                </div>
+              )}
+
+      {/* Calendar View */}
+      {currentView === "calendar" && (
+        <div className="space-y-4">
+          {/* View Toggle and Navigation */}
+          <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                    <Button 
+                variant={calendarViewType === "month" ? "default" : "ghost"}
+                onClick={() => setCalendarViewType("month")}
+                className={calendarViewType === "month" ? "border-2" : ""}
+              >
+                Month
+                    </Button>
+                    <Button 
+                variant={calendarViewType === "week" ? "default" : "ghost"}
+                onClick={() => setCalendarViewType("week")}
+                className={calendarViewType === "week" ? "border-2" : ""}
+              >
+                Week
+                    </Button>
+                  </div>
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={() => calendarViewType === "month" ? navigateMonth("prev") : navigateWeek("prev")}>
+                <ChevronLeft className="w-5 h-5" />
+                  </Button>
+              <h2 className="text-xl font-semibold">
+                {calendarViewType === "month" ? formatMonthYear(currentMonth) : formatWeekRange(currentWeek)}
+              </h2>
+              <Button variant="ghost" size="icon" onClick={() => calendarViewType === "month" ? navigateMonth("next") : navigateWeek("next")}>
+                <ChevronRight className="w-5 h-5" />
+                  </Button>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              {calendarViewType === "weekly" ? (
-              <div className="grid grid-cols-5 gap-4">
-                  {weeklySchedule.map((day, index) => (
-                  <div key={index} className="border rounded-lg p-4">
-                      <h4 className="mb-3 font-semibold">{day.day}</h4>
-                    <div className="space-y-2">
-                      {day.projects.map((project, idx) => (
-                        <div
-                          key={idx}
-                            className="p-3 bg-primary/10 border border-primary/20 rounded text-primary cursor-pointer hover:bg-primary/20 transition-colors"
-                            onClick={() => handleScheduleItemClick(project)}
-                        >
-                            <p className="font-medium text-sm">{project.title}</p>
-                            <p className="text-xs text-muted-foreground mt-1">{project.time}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              ) : (
-                <div className="grid grid-cols-7 gap-2">
-                  {/* Calendar Header */}
+
+          {/* Monthly View */}
+          {calendarViewType === "month" && (
+            <div className="bg-white rounded-lg border p-6">
+              <div className="grid grid-cols-7 gap-2 mb-4">
                   {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-                    <div key={day} className="p-2 text-center font-semibold text-muted-foreground">
+                  <div key={day} className="text-center font-semibold text-gray-700 py-2">
                       {day}
                     </div>
                   ))}
+              </div>
+              <div className="grid grid-cols-7 gap-2">
+                {Array.from({ length: 35 }).map((_, index) => {
+                  const day = index - 6; // Adjust for first week
+                  const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+                  const dateStr = date.toISOString().split('T')[0]; // Format: YYYY-MM-DD
                   
-                  {/* Empty cells for calendar alignment */}
-                  {Array.from({ length: monthlyCalendar.leadingBlankCount }, (_, index) => (
-                    <div key={`leading-${index}`} className="p-2 h-24 border rounded"></div>
-                  ))}
-
-                  {/* Calendar days with projects */}
-                  {monthlyCalendar.days.map((day, index) => (
-                    <div key={day.date.toISOString()} className="p-2 h-24 border rounded">
-                      <div className="text-sm font-medium mb-1">
-                        {day.date.getDate()}
-                      </div>
+                  // Filter projects with relevant statuses that match this date
+                  // In-House Projects statuses
+                  const inHouseStatuses = [
+                    "scheduled", "to-be-rescheduled", "installation-in-progress", "installation-completed",
+                    "ces-certificate-applied", "ces-certificate-received", "grid-connection-initiated",
+                    "grid-connection-completed", "system-handover", "done"
+                  ];
+                  // Retailer Projects statuses
+                  const retailerStatuses = [
+                    "retailer-scheduled", "retailer-to-be-rescheduled", "retailer-installation-in-progress",
+                    "retailer-installation-completed", "retailer-ces-certificate-applied", "retailer-ces-certificate-received",
+                    "site-inspection", "stage-one", "stage-two", "full-system", "retailer-done"
+                  ];
+                  const allCalendarStatuses = [...inHouseStatuses, ...retailerStatuses];
+                  
+                  const dayProjects = projects.filter(p => {
+                    if (!allCalendarStatuses.includes(p.status)) return false;
+                    
+                    // Check various date fields
+                    const projectDate = p.startDate || 
+                                      p.projectDetails?.additionalInfo?.jobDate ||
+                                      p.projectDetails?.additionalInfo?.siteInspection?.date ||
+                                      p.projectSnapshot?.startDate;
+                    
+                    if (!projectDate) return false;
+                    
+                    // Compare dates (handle both YYYY-MM-DD and other formats)
+                    const projDateStr = typeof projectDate === 'string' 
+                      ? projectDate.split('T')[0] 
+                      : new Date(projectDate).toISOString().split('T')[0];
+                    
+                    return projDateStr === dateStr;
+                  });
+                  
+                  // Separate in-house and retailer projects
+                  const inHouseProjects = dayProjects.filter(p => inHouseStatuses.includes(p.status));
+                  const retailerProjects = dayProjects.filter(p => retailerStatuses.includes(p.status));
+                  
+                  return (
+                    <div
+                      key={index}
+                      className={`min-h-24 border rounded p-2 ${
+                        date.getMonth() !== currentMonth.getMonth() ? "bg-gray-50 text-gray-400" : "bg-white"
+                      }`}
+                    >
+                      <div className="text-sm font-medium mb-1">{date.getDate()}</div>
                       <div className="space-y-1">
-                        {day.projects.map((project, idx) => (
-                          <div
-                            key={`${project.id ?? project.title}-${idx}`}
-                            className="text-xs p-1 bg-primary/10 border border-primary/20 rounded text-primary cursor-pointer hover:bg-primary/20 transition-colors truncate"
-                            onClick={() => handleScheduleItemClick(project)}
-                            title={project.title}
-                          >
-                            {project.title}
+                        {/* Show all projects with status-specific colors */}
+                        {dayProjects.slice(0, 2).map((project) => {
+                          const statusColor = getStatusColor(project.status);
+                          // Determine if it's an In-House or Retailer project
+                          const isRetailerProject = retailerStatuses.includes(project.status);
+                          const isInHouseProject = inHouseStatuses.includes(project.status);
+                          
+                          return (
+                            <div
+                              key={project.id}
+                              className={`text-xs p-1 ${statusColor.bg} ${statusColor.text} rounded cursor-pointer ${statusColor.hover} flex items-center gap-1.5 relative`}
+                              onClick={() => handleProjectClick(project)}
+                              style={{
+                                borderLeft: isRetailerProject ? '3px solid #10b981' : isInHouseProject ? '3px solid #3b82f6' : '3px solid transparent'
+                              }}
+                            >
+                              {/* Type indicator dot (smaller, on the left) */}
+                              <span 
+                                className="flex-shrink-0" 
+                                style={{
+                                  width: '6px',
+                                  height: '6px',
+                                  backgroundColor: isRetailerProject ? '#10b981' : isInHouseProject ? '#3b82f6' : '#6b7280',
+                                  borderRadius: '50%',
+                                  display: 'inline-block'
+                                }}
+                                title={isRetailerProject ? 'Retailer' : isInHouseProject ? 'In-House' : 'Unknown'}
+                              ></span>
+                              {/* Status indicator dot */}
+                              <span 
+                                className="flex-shrink-0" 
+                                style={{
+                                  width: '8px',
+                                  height: '8px',
+                                  backgroundColor: statusColor.dot,
+                                  borderRadius: '50%',
+                                  display: 'inline-block'
+                                }}
+                                title={`Status: ${project.status}`}
+                              ></span>
+                              <span>{project.name}</span>
                           </div>
-                        ))}
+                          );
+                        })}
+                        {dayProjects.length > 2 && (
+                          <div className="text-xs text-gray-500">+{dayProjects.length - 2} more</div>
+                        )}
                       </div>
                     </div>
-                  ))}
-
-                  {/* Fill remaining calendar cells */}
-                  {Array.from({ length: monthlyCalendar.trailingBlankCount }, (_, i) => (
-                    <div key={`trailing-${i}`} className="p-2 h-24 border rounded"></div>
-                  ))}
+                  );
+                })}
+                    </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
 
-        <TabsContent value="resources" className="mt-6 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Team Availability</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {team.map((member) => (
-                  <div key={member.id} className="p-4 border rounded-lg cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleTeamMemberClick(member)}>
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <p>{member.name}</p>
-                        <p className="text-muted-foreground">{member.role}</p>
+          {/* Legend */}
+          <div className="bg-white rounded-lg border p-4 mt-4">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Status Legend</h3>
+            <div className="mb-4 pb-4 border-b">
+              <p className="text-xs font-semibold text-gray-600 mb-2">Project Type Indicators:</p>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
+                    <span 
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        backgroundColor: '#3b82f6',
+                        borderRadius: '50%',
+                        display: 'inline-block'
+                      }}
+                    ></span>
+                    <span 
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        backgroundColor: '#3b82f6',
+                        borderRadius: '50%',
+                        display: 'inline-block',
+                        marginLeft: '2px'
+                      }}
+                    ></span>
                       </div>
-                      <div className="text-right">
-                        <p>{member.availability}% Available</p>
-                        <p className="text-muted-foreground">{member.projects} active projects</p>
+                  <span className="text-xs text-gray-700">In-House Project (Blue border + dots)</span>
                       </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
+                    <span 
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        backgroundColor: '#10b981',
+                        borderRadius: '50%',
+                        display: 'inline-block'
+                      }}
+                    ></span>
+                    <span 
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        backgroundColor: '#10b981',
+                        borderRadius: '50%',
+                        display: 'inline-block',
+                        marginLeft: '2px'
+                      }}
+                    ></span>
                     </div>
-                    <div className="relative h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={`absolute inset-y-0 left-0 rounded-full ${
-                          member.availability > 70
-                            ? "bg-success"
-                            : member.availability > 40
-                            ? "bg-warning"
-                            : "bg-destructive"
-                        }`}
-                        style={{ width: `${member.availability}%` }}
-                      />
+                  <span className="text-xs text-gray-700">Retailer Project (Green border + dots)</span>
                     </div>
                   </div>
-                ))}
+              <p className="text-xs text-gray-500 mt-2">The left border and first dot indicate project type. The second dot indicates status.</p>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Availability Heatmap</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-6 gap-2">
-                <div className="p-2"></div>
-                {["Mon", "Tue", "Wed", "Thu", "Fri"].map((day) => (
-                  <div key={day} className="p-2 text-center text-muted-foreground">
-                    {day}
-                  </div>
-                ))}
-
-                {team.map((member) => (
-                  <React.Fragment key={member.id}>
-                    <div className="p-2 text-muted-foreground">{member.name.split(" ")[0]}</div>
-                    {[90, 60, 80, 70, 85].map((avail, idx) => (
-                      <div
-                        key={idx}
-                        className={`p-4 rounded text-center cursor-pointer ${
-                          avail > 70
-                            ? "bg-success/20 hover:bg-success/30"
-                            : avail > 40
-                            ? "bg-warning/20 hover:bg-warning/30"
-                            : "bg-destructive/20 hover:bg-destructive/30"
-                        }`}
-                        onClick={() => handleAvailabilityClick(member, ["Mon", "Tue", "Wed", "Thu", "Fri"][idx], avail)}
-                      >
-                        {avail}%
-                      </div>
-                    ))}
-                  </React.Fragment>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-6 mt-6">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-success/20 rounded" />
-                  <span className="text-muted-foreground">70-100% Available</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-warning/20 rounded" />
-                  <span className="text-muted-foreground">40-70% Available</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-destructive/20 rounded" />
-                  <span className="text-muted-foreground">0-40% Available</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Drag to Schedule</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="p-8 border-2 border-dashed rounded-lg text-center">
-                <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground mb-2">Drag projects to team members to assign</p>
-                <Button variant="outline">View Interactive Scheduler</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {/* Dialogs */}
-      {/* Export Schedule Dialog */}
-      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Download className="w-5 h-5" />
-              Export Schedule
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Export Format</Label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select format" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="csv">CSV</SelectItem>
-                  <SelectItem value="excel">Excel</SelectItem>
-                  <SelectItem value="pdf">PDF</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Date Range</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <Input type="date" placeholder="Start Date" />
-                <Input type="date" placeholder="End Date" />
-              </div>
-            </div>
-            <div>
-              <Label>Include</Label>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              {/* In-House Projects Statuses */}
               <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="projects" defaultChecked />
-                  <Label htmlFor="projects">Project Details</Label>
+                <p className="text-xs font-semibold text-gray-600 mb-1">In-House Projects</p>
+                {[
+                  { status: "scheduled" as ProjectStatus, label: "Scheduled" },
+                  { status: "to-be-rescheduled" as ProjectStatus, label: "To Be Rescheduled" },
+                  { status: "installation-in-progress" as ProjectStatus, label: "Installation In-Progress" },
+                  { status: "installation-completed" as ProjectStatus, label: "Installation Completed" },
+                  { status: "ces-certificate-applied" as ProjectStatus, label: "CES Applied" },
+                  { status: "ces-certificate-received" as ProjectStatus, label: "CES Received" },
+                  { status: "grid-connection-initiated" as ProjectStatus, label: "Grid Initiated" },
+                  { status: "grid-connection-completed" as ProjectStatus, label: "Grid Completed" },
+                  { status: "system-handover" as ProjectStatus, label: "System Handover" },
+                  { status: "done" as ProjectStatus, label: "Done" },
+                ].map(({ status, label }) => {
+                  const statusColor = getStatusColor(status);
+                  return (
+                    <div key={status} className="flex items-center gap-2">
+                      <span 
+                        style={{
+                          width: '10px',
+                          height: '10px',
+                          backgroundColor: statusColor.dot,
+                          borderRadius: '50%',
+                          display: 'inline-block'
+                        }}
+                      ></span>
+                      <span className="text-xs text-gray-700">{label}</span>
+                  </div>
+                  );
+                })}
+                      </div>
+              {/* Retailer Projects Statuses */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-gray-600 mb-1">Retailer Projects</p>
+                {[
+                  { status: "site-inspection" as ProjectStatus, label: "Site Inspection" },
+                  { status: "stage-one" as ProjectStatus, label: "Stage One" },
+                  { status: "stage-two" as ProjectStatus, label: "Stage Two" },
+                  { status: "full-system" as ProjectStatus, label: "Full System" },
+                  { status: "retailer-scheduled" as ProjectStatus, label: "Scheduled" },
+                  { status: "retailer-to-be-rescheduled" as ProjectStatus, label: "To Be Rescheduled" },
+                  { status: "retailer-installation-in-progress" as ProjectStatus, label: "Installation In-Progress" },
+                  { status: "retailer-installation-completed" as ProjectStatus, label: "Installation Completed" },
+                  { status: "retailer-ces-certificate-applied" as ProjectStatus, label: "CES Applied" },
+                  { status: "retailer-ces-certificate-received" as ProjectStatus, label: "CES Received" },
+                  { status: "retailer-done" as ProjectStatus, label: "Done" },
+                ].map(({ status, label }) => {
+                  const statusColor = getStatusColor(status);
+                  return (
+                    <div key={status} className="flex items-center gap-2">
+                      <span 
+                        style={{
+                          width: '10px',
+                          height: '10px',
+                          backgroundColor: statusColor.dot,
+                          borderRadius: '50%',
+                          display: 'inline-block'
+                        }}
+                      ></span>
+                      <span className="text-xs text-gray-700">{label}</span>
+              </div>
+                  );
+                })}
                 </div>
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="team" defaultChecked />
-                  <Label htmlFor="team">Team Assignments</Label>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="timeline" defaultChecked />
-                  <Label htmlFor="timeline">Timeline</Label>
                 </div>
+
+          {/* Weekly View */}
+          {calendarViewType === "week" && (
+            <div className="bg-white rounded-lg border p-6">
+              <div className="grid grid-cols-7 gap-2 mb-4">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                  <div key={day} className="text-center font-semibold text-gray-700 py-2">
+                    {day}
+              </div>
+                ))}
+                      </div>
+              <div className="grid grid-cols-7 gap-2">
+                {getWeekDays(currentWeek).map((date, index) => {
+                  const dateStr = date.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+                  
+                  // Filter projects with relevant statuses that match this date
+                  // In-House Projects statuses
+                  const inHouseStatuses = [
+                    "scheduled", "to-be-rescheduled", "installation-in-progress", "installation-completed",
+                    "ces-certificate-applied", "ces-certificate-received", "grid-connection-initiated",
+                    "grid-connection-completed", "system-handover", "done"
+                  ];
+                  // Retailer Projects statuses
+                  const retailerStatuses = [
+                    "retailer-scheduled", "retailer-to-be-rescheduled", "retailer-installation-in-progress",
+                    "retailer-installation-completed", "retailer-ces-certificate-applied", "retailer-ces-certificate-received",
+                    "site-inspection", "stage-one", "stage-two", "full-system", "retailer-done"
+                  ];
+                  const allCalendarStatuses = [...inHouseStatuses, ...retailerStatuses];
+                  
+                  const dayProjects = projects.filter(p => {
+                    if (!allCalendarStatuses.includes(p.status)) return false;
+                    
+                    // Check various date fields
+                    const projectDate = p.startDate || 
+                                      p.projectDetails?.additionalInfo?.jobDate ||
+                                      p.projectDetails?.additionalInfo?.siteInspection?.date ||
+                                      p.projectSnapshot?.startDate;
+                    
+                    if (!projectDate) return false;
+                    
+                    // Compare dates (handle both YYYY-MM-DD and other formats)
+                    const projDateStr = typeof projectDate === 'string' 
+                      ? projectDate.split('T')[0] 
+                      : new Date(projectDate).toISOString().split('T')[0];
+                    
+                    return projDateStr === dateStr;
+                  });
+                  
+                  // Separate in-house and retailer projects
+                  const inHouseProjects = dayProjects.filter(p => inHouseStatuses.includes(p.status));
+                  const retailerProjects = dayProjects.filter(p => retailerStatuses.includes(p.status));
+                  
+                  return (
+                    <div
+                      key={index}
+                      className="min-h-96 border rounded p-2 bg-white"
+                    >
+                      <div className="text-sm font-medium mb-2">
+                        {date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </div>
+                      <div className="space-y-1">
+                        {/* Show all projects with status-specific colors */}
+                        {dayProjects.map((project) => {
+                          const statusColor = getStatusColor(project.status);
+                          // Determine if it's an In-House or Retailer project
+                          const isRetailerProject = retailerStatuses.includes(project.status);
+                          const isInHouseProject = inHouseStatuses.includes(project.status);
+                          
+                          return (
+                            <div
+                              key={project.id}
+                              className={`text-xs p-1 ${statusColor.bg} ${statusColor.text} rounded cursor-pointer ${statusColor.hover} flex items-center gap-1.5 relative`}
+                              onClick={() => handleProjectClick(project)}
+                              style={{
+                                borderLeft: isRetailerProject ? '3px solid #10b981' : isInHouseProject ? '3px solid #3b82f6' : '3px solid transparent'
+                              }}
+                            >
+                              {/* Type indicator dot (smaller, on the left) */}
+                              <span 
+                                className="flex-shrink-0" 
+                                style={{
+                                  width: '6px',
+                                  height: '6px',
+                                  backgroundColor: isRetailerProject ? '#10b981' : isInHouseProject ? '#3b82f6' : '#6b7280',
+                                  borderRadius: '50%',
+                                  display: 'inline-block'
+                                }}
+                                title={isRetailerProject ? 'Retailer' : isInHouseProject ? 'In-House' : 'Unknown'}
+                              ></span>
+                              {/* Status indicator dot */}
+                              <span 
+                                className="flex-shrink-0" 
+                                style={{
+                                  width: '8px',
+                                  height: '8px',
+                                  backgroundColor: statusColor.dot,
+                                  borderRadius: '50%',
+                                  display: 'inline-block'
+                                }}
+                                title={`Status: ${project.status}`}
+                              ></span>
+                              <span>{project.name}</span>
+            </div>
+                          );
+                        })}
               </div>
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowExportDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleExportConfirm}>
-              <Download className="w-4 h-4 mr-2" />
-              Export
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                  );
+                })}
+                </div>
+                </div>
+          )}
+                </div>
+      )}
 
       {/* New Project Dialog */}
       <Dialog open={showNewProjectDialog} onOpenChange={setShowNewProjectDialog}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>Schedule New Project</span>
-              <Button variant="ghost" size="sm" onClick={() => setShowNewProjectDialog(false)}>
-                <X className="w-4 h-4" />
-              </Button>
-            </DialogTitle>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b">
+            <DialogTitle>Schedule New Project</DialogTitle>
           </DialogHeader>
           
+          <div className="space-y-4 py-4 px-6 overflow-y-auto flex-1" style={{ maxHeight: 'calc(90vh - 140px)' }}>
+            {/* Retailer New column specialized form */}
+            {newProject.status === "retailer-new" && (
           <div className="space-y-6">
-            {/* Project Overview */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Project Overview</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {/* Auto Project ID */}
+                <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Project Name</Label>
+                    <Label>Project ID</Label>
                   <Input 
-                    value={newProject.title}
-                    onChange={(e) => setNewProject({ ...newProject, title: e.target.value })}
-                    placeholder="Enter project name"
+                      value={newProject.projectId || ""}
+                      onChange={(e) => setNewProject({ ...newProject, projectId: e.target.value })}
+                      placeholder="Auto-generated"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Value</Label>
-                  <Input 
-                    value={newProject.value}
-                    onChange={(e) => setNewProject({ ...newProject, value: e.target.value })}
-                    placeholder="e.g., $15,000"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Priority</Label>
-                  <Select value={newProject.priority} onValueChange={(value) => setNewProject({ ...newProject, priority: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select priority" />
-                    </SelectTrigger>
+                    <Label>Job Type</Label>
+                    <Select value={newProject.jobType} onValueChange={(v)=>setNewProject({ ...newProject, jobType: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select job type" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="Site Inspection">Site Inspection</SelectItem>
+                        <SelectItem value="Stage One">Stage One</SelectItem>
+                        <SelectItem value="Stage Two">Stage Two</SelectItem>
+                        <SelectItem value="Full System">Full System</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+                </div>
+
+                {/* Customer */}
+                <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Client Type</Label>
-                  <Select value={newProject.clientType} onValueChange={(value) => setNewProject({ ...newProject, clientType: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select client type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="retailer">Retailer</SelectItem>
-                      <SelectItem value="builder">Builder</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <Label>Customer Name</Label>
+                    <Input value={newProject.customerName} onChange={(e)=>setNewProject({ ...newProject, customerName: e.target.value })} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Client Name</Label>
-                  <Textarea
-                    value={newProject.clientName}
-                    onChange={(e) => setNewProject({ ...newProject, clientName: e.target.value })}
-                    placeholder="Enter client name"
-                    rows={3}
-                  />
+                    <Label>Customer Email</Label>
+                    <Input type="email" value={newProject.customerEmail} onChange={(e)=>setNewProject({ ...newProject, customerEmail: e.target.value })} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Job Type</Label>
-                  <Select value={newProject.jobType || ""} onValueChange={(value) => setNewProject({ ...newProject, jobType: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select job type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="site-inspection">Site Inspection</SelectItem>
-                      <SelectItem value="stage-1">Stage 1</SelectItem>
-                      <SelectItem value="stage-2">Stage 2</SelectItem>
-                      <SelectItem value="full-system">Full System</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <Label>Customer Contact</Label>
+                    <Input value={newProject.customerContact} onChange={(e)=>setNewProject({ ...newProject, customerContact: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Customer Address</Label>
+                    <Input value={newProject.customerAddress} onChange={(e)=>setNewProject({ ...newProject, customerAddress: e.target.value })} />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <Label>Location (Google Maps)</Label>
+                    <Input placeholder="Paste Google Maps link or address" value={newProject.location} onChange={(e)=>setNewProject({ ...newProject, location: e.target.value })} />
                 </div>
               </div>
 
-              {/* Site Inspection Booking - Show only when Site Inspection is selected */}
-              {newProject.jobType === "site-inspection" && !newProject.inspectionBooked && (
-                <div className="space-y-4 p-4 border border-blue-200 rounded-lg bg-blue-50">
-                  <h4 className="text-md font-semibold text-blue-800">Book Site Inspection</h4>
+                {/* Client info */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Inspection Date</Label>
-                      <Input
-                        type="date"
-                        value={newProject.inspectionDate}
-                        onChange={(e) => setNewProject({ ...newProject, inspectionDate: e.target.value })}
-                        min={new Date().toISOString().split('T')[0]}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Time Slot</Label>
-                      <Select value={newProject.inspectionTime} onValueChange={(value) => setNewProject({ ...newProject, inspectionTime: value })}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select time slot" />
-                        </SelectTrigger>
+                    <Label>Client Type</Label>
+                    <Select value={newProject.clientType || undefined} onValueChange={(v)=>setNewProject({ ...newProject, clientType: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select client type" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="09:00">9:00 AM</SelectItem>
-                          <SelectItem value="10:00">10:00 AM</SelectItem>
-                          <SelectItem value="11:00">11:00 AM</SelectItem>
-                          <SelectItem value="12:00">12:00 PM</SelectItem>
-                          <SelectItem value="13:00">1:00 PM</SelectItem>
-                          <SelectItem value="14:00">2:00 PM</SelectItem>
-                          <SelectItem value="15:00">3:00 PM</SelectItem>
-                          <SelectItem value="16:00">4:00 PM</SelectItem>
-                          <SelectItem value="17:00">5:00 PM</SelectItem>
+                        <SelectItem value="Retailer">Retailer</SelectItem>
+                        <SelectItem value="Builder">Builder</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
-                  <div className="flex justify-center mt-6 mb-4">
-                    <Button 
-                      onClick={() => {
-                        if (newProject.inspectionDate && newProject.inspectionTime) {
-                          setNewProject({ ...newProject, inspectionBooked: true });
-                          alert(`Site inspection booked for ${new Date(newProject.inspectionDate).toLocaleDateString()} at ${formatTimeDisplay(newProject.inspectionTime)}`);
-                        } else {
-                          alert("Please select both date and time slot for the inspection.");
-                        }
-                      }}
-                      className="px-4 py-2 text-sm font-medium rounded-md shadow-md"
-                      style={{ 
-                        minHeight: '36px', 
-                        minWidth: '150px',
-                        backgroundColor: '#000000',
-                        color: '#ffffff',
-                        border: '1px solid #333333'
-                      }}
-                    >
-                      <CalendarIcon className="w-4 h-4 mr-2" style={{ color: '#ffffff' }} />
-                      <span style={{ color: '#ffffff' }}>Book Site Inspection</span>
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Site Inspection Summary - Show after booking */}
-              {newProject.jobType === "site-inspection" && newProject.inspectionBooked && (
-                <div className="space-y-4 p-4 border border-green-200 rounded-lg bg-green-50">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-md font-semibold text-green-800">Site Inspection Booked</h4>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setNewProject({ ...newProject, inspectionBooked: false })}
-                      className="text-xs"
-                    >
-                      Edit
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-1">
-                      <Label className="text-sm font-medium text-gray-600">Job Type</Label>
-                      <p className="text-sm font-semibold">Site Inspection</p>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-sm font-medium text-gray-600">Date</Label>
-                      <p className="text-sm font-semibold">
-                        {newProject.inspectionDate ? new Date(newProject.inspectionDate).toLocaleDateString() : "Not set"}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-sm font-medium text-gray-600">Time</Label>
-                      <p className="text-sm font-semibold">
-                        {newProject.inspectionTime ? formatTimeDisplay(newProject.inspectionTime) : "Not set"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Stage 1 Booking - Show only when Stage 1 is selected */}
-              {newProject.jobType === "stage-1" && !newProject.stage1Booked && (
-                <div className="space-y-4 p-4 border border-blue-200 rounded-lg bg-blue-50">
-                  <h4 className="text-md font-semibold text-blue-800">Book Stage 1</h4>
                   <div className="space-y-2">
-                    <Label>Stage 1 Date</Label>
+                    <Label>Client Name</Label>
+                    <Input value={newProject.clientName} onChange={(e)=>setNewProject({ ...newProject, clientName: e.target.value })} />
+                  </div>
+                  </div>
+
+                {/* Conditional date/time based on Job Type */}
+                {newProject.jobType === "Site Inspection" && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Site Inspection Date</Label>
+                      <Input type="date" value={newProject.siteInspectionDate} onChange={(e)=>setNewProject({ ...newProject, siteInspectionDate: e.target.value })} />
+                  </div>
+                    <div className="space-y-2">
+                      <Label>Site Inspection Time</Label>
+                      <Input type="time" value={newProject.siteInspectionTime} onChange={(e)=>setNewProject({ ...newProject, siteInspectionTime: e.target.value })} />
+                    </div>
+                    </div>
+                )}
+                {["Stage One", "Stage Two", "Full System"].includes(newProject.jobType) && (
+                  <div className="space-y-2">
+                    <Label>{newProject.jobType} Date</Label>
+                    <Input type="date" value={newProject.jobDate} onChange={(e)=>setNewProject({ ...newProject, jobDate: e.target.value })} />
+                </div>
+              )}
+
+                {/* Price */}
+                  <div className="space-y-2">
+                  <Label>Price (AUD)</Label>
+                  <Input value={newProject.priceAud} onChange={(e)=>setNewProject({ ...newProject, priceAud: e.target.value })} placeholder="e.g., 8500" />
+                  </div>
+
+                {/* System type + conditional fields */}
+                <div className="space-y-2">
+                  <Label>System Type</Label>
+                  <Select value={newProject.systemType} onValueChange={(v)=>setNewProject({ ...newProject, systemType: v })}>
+                    <SelectTrigger><SelectValue placeholder="Select system type" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Only PV">Only PV</SelectItem>
+                      <SelectItem value="PV+Battery">PV+Battery</SelectItem>
+                      <SelectItem value="PV+Battery+EV Charger">PV+Battery+EV Charger</SelectItem>
+                      <SelectItem value="Only Battery">Only Battery</SelectItem>
+                      <SelectItem value="Only EV Charger">Only EV Charger</SelectItem>
+                      <SelectItem value="PV+EV Charger">PV+EV Charger</SelectItem>
+                      <SelectItem value="Battery+EV Charger">Battery+EV Charger</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  </div>
+
+                {/* PV fields */}
+                {["Only PV","PV+Battery","PV+Battery+EV Charger","PV+EV Charger"].includes(newProject.systemType) && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>PV System Size (kW)</Label><Input value={newProject.pvSystemSizeKw} onChange={(e)=>setNewProject({ ...newProject, pvSystemSizeKw: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Inverter Size (kW)</Label><Input value={newProject.inverterSizeKw} onChange={(e)=>setNewProject({ ...newProject, inverterSizeKw: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Inverter Brand</Label><Input value={newProject.inverterBrand} onChange={(e)=>setNewProject({ ...newProject, inverterBrand: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Model Number</Label><Input value={newProject.inverterModel} onChange={(e)=>setNewProject({ ...newProject, inverterModel: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Panel Brand</Label><Input value={newProject.panelBrand} onChange={(e)=>setNewProject({ ...newProject, panelBrand: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Panel Module (watts)</Label><Input value={newProject.panelModuleWatts} onChange={(e)=>setNewProject({ ...newProject, panelModuleWatts: e.target.value })} /></div>
+                </div>
+              )}
+
+                {/* Battery fields */}
+                {["Only Battery","PV+Battery","PV+Battery+EV Charger","Battery+EV Charger"].includes(newProject.systemType) && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>Battery Size (kWh)</Label><Input value={newProject.batterySizeKwh} onChange={(e)=>setNewProject({ ...newProject, batterySizeKwh: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Battery Brand</Label><Input value={newProject.batteryBrand} onChange={(e)=>setNewProject({ ...newProject, batteryBrand: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Battery Model</Label><Input value={newProject.batteryModel} onChange={(e)=>setNewProject({ ...newProject, batteryModel: e.target.value })} /></div>
+                  </div>
+                )}
+
+                {/* EV Charger fields */}
+                {["Only EV Charger","PV+EV Charger","PV+Battery+EV Charger","Battery+EV Charger"].includes(newProject.systemType) && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>EV Charger Brand</Label><Input value={newProject.evChargerBrand} onChange={(e)=>setNewProject({ ...newProject, evChargerBrand: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>EV Charger Model</Label><Input value={newProject.evChargerModel} onChange={(e)=>setNewProject({ ...newProject, evChargerModel: e.target.value })} /></div>
+                </div>
+              )}
+
+                {/* Property Information */}
+                  <div className="space-y-2">
+                  <p className="font-medium">Property Information</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>House Storey</Label>
+                      <Select value={newProject.houseStorey} onValueChange={(v)=>setNewProject({ ...newProject, houseStorey: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Single">Single</SelectItem>
+                          <SelectItem value="Double">Double</SelectItem>
+                          <SelectItem value="Triple">Triple</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                  </div>
+                    {newProject.houseStorey === "Other" && (
+                      <div className="space-y-2">
+                        <Label>House Storey (Other)</Label>
+                        <Textarea value={newProject.houseStoreyOther} onChange={(e)=>setNewProject({ ...newProject, houseStoreyOther: e.target.value })} />
+                  </div>
+                    )}
+                    <div className="space-y-2">
+                      <Label>Roof Type</Label>
+                      <Select value={newProject.roofType} onValueChange={(v)=>setNewProject({ ...newProject, roofType: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Tin (Colorbond)">Tin (Colorbond)</SelectItem>
+                          <SelectItem value="Tin (Kliplock)">Tin (Kliplock)</SelectItem>
+                          <SelectItem value="Tile (Concrete)">Tile (Concrete)</SelectItem>
+                          <SelectItem value="Tile (Terracotta)">Tile (Terracotta)</SelectItem>
+                          <SelectItem value="Flat">Flat</SelectItem>
+                          <SelectItem value="NA">NA</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {newProject.roofType === "Other" && (
+                      <div className="space-y-2">
+                        <Label>Roof Type (Other)</Label>
+                        <Textarea value={newProject.roofTypeOther} onChange={(e)=>setNewProject({ ...newProject, roofTypeOther: e.target.value })} />
+                </div>
+              )}
+                    <div className="space-y-2">
+                      <Label>Meter Phase</Label>
+                      <Select value={newProject.meterPhase} onValueChange={(v)=>setNewProject({ ...newProject, meterPhase: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Single">Single</SelectItem>
+                          <SelectItem value="Double">Double</SelectItem>
+                          <SelectItem value="Three">Three</SelectItem>
+                        </SelectContent>
+                      </Select>
+                  </div>
+                    <div className="space-y-2">
+                      <Label>Access to 2 Storey</Label>
+                      <Select value={newProject.accessSecondStorey} onValueChange={(v)=>setNewProject({ ...newProject, accessSecondStorey: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Yes">Yes</SelectItem>
+                          <SelectItem value="No">No</SelectItem>
+                          <SelectItem value="NA">NA</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Access to Inverter</Label>
+                      <Select value={newProject.accessToInverter} onValueChange={(v)=>setNewProject({ ...newProject, accessToInverter: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Yes">Yes</SelectItem>
+                          <SelectItem value="No">No</SelectItem>
+                          <SelectItem value="No Access Required">No Access Required</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            {/* Retailer Site Inspection specialized form */}
+            {newProject.status === "site-inspection" && (
+          <div className="space-y-6">
+                {/* Auto Project ID */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Project ID</Label>
                     <Input
-                      type="date"
-                      value={newProject.stage1Date}
-                      onChange={(e) => setNewProject({ ...newProject, stage1Date: e.target.value })}
-                      min={new Date().toISOString().split('T')[0]}
+                      value={newProject.projectId || `PRJ-${newProject.startDate || new Date().toISOString().slice(0,10)}-${(newProject.projectId || '').split('-').pop() || new Date().getTime().toString().slice(-4)}`}
+                      onChange={(e) => setNewProject({ ...newProject, projectId: e.target.value })}
+                      placeholder="Auto-generated"
                     />
                   </div>
-                  <div className="flex justify-center mt-6 mb-4">
-                    <Button 
-                      onClick={() => {
-                        if (newProject.stage1Date) {
-                          setNewProject({ ...newProject, stage1Booked: true });
-                          alert(`Stage 1 booked for ${new Date(newProject.stage1Date).toLocaleDateString()}`);
-                        } else {
-                          alert("Please select a date for Stage 1.");
-                        }
-                      }}
-                      className="px-4 py-2 text-sm font-medium rounded-md shadow-md"
-                      style={{ 
-                        minHeight: '36px', 
-                        minWidth: '150px',
-                        backgroundColor: '#000000',
-                        color: '#ffffff',
-                        border: '1px solid #333333'
-                      }}
-                    >
-                      <CalendarIcon className="w-4 h-4 mr-2" style={{ color: '#ffffff' }} />
-                      <span style={{ color: '#ffffff' }}>Book Stage 1</span>
-                    </Button>
+                <div className="space-y-2">
+                    <Label>Job Type</Label>
+                    <Input value={newProject.jobType || "Site Inspection"} readOnly />
                   </div>
                 </div>
-              )}
 
-              {/* Stage 1 Summary - Show after booking */}
-              {newProject.jobType === "stage-1" && newProject.stage1Booked && (
-                <div className="space-y-4 p-4 border border-green-200 rounded-lg bg-green-50">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-md font-semibold text-green-800">Stage 1 Booked</h4>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setNewProject({ ...newProject, stage1Booked: false })}
-                      className="text-xs"
-                    >
-                      Edit
-                    </Button>
-                  </div>
+                {/* Customer */}
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <Label className="text-sm font-medium text-gray-600">Job Type</Label>
-                      <p className="text-sm font-semibold">Stage 1</p>
+                <div className="space-y-2">
+                    <Label>Customer Name</Label>
+                    <Input value={newProject.customerName} onChange={(e)=>setNewProject({ ...newProject, customerName: e.target.value })} />
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-sm font-medium text-gray-600">Date</Label>
-                      <p className="text-sm font-semibold">
-                        {newProject.stage1Date ? new Date(newProject.stage1Date).toLocaleDateString() : "Not set"}
-                      </p>
+                <div className="space-y-2">
+                    <Label>Customer Email</Label>
+                    <Input type="email" value={newProject.customerEmail} onChange={(e)=>setNewProject({ ...newProject, customerEmail: e.target.value })} />
                     </div>
+                <div className="space-y-2">
+                    <Label>Customer Contact</Label>
+                    <Input value={newProject.customerContact} onChange={(e)=>setNewProject({ ...newProject, customerContact: e.target.value })} />
                   </div>
+                <div className="space-y-2">
+                    <Label>Customer Address</Label>
+                    <Input value={newProject.customerAddress} onChange={(e)=>setNewProject({ ...newProject, customerAddress: e.target.value })} />
                 </div>
-              )}
-
-              {/* Stage 2 Booking - Show only when Stage 2 is selected */}
-              {newProject.jobType === "stage-2" && !newProject.stage2Booked && (
-                <div className="space-y-4 p-4 border border-blue-200 rounded-lg bg-blue-50">
-                  <h4 className="text-md font-semibold text-blue-800">Book Stage 2</h4>
-                  <div className="space-y-2">
-                    <Label>Stage 2 Date</Label>
-                    <Input
-                      type="date"
-                      value={newProject.stage2Date}
-                      onChange={(e) => setNewProject({ ...newProject, stage2Date: e.target.value })}
-                      min={new Date().toISOString().split('T')[0]}
-                    />
-                  </div>
-                  <div className="flex justify-center mt-6 mb-4">
-                    <Button 
-                      onClick={() => {
-                        if (newProject.stage2Date) {
-                          setNewProject({ ...newProject, stage2Booked: true });
-                          alert(`Stage 2 booked for ${new Date(newProject.stage2Date).toLocaleDateString()}`);
-                        } else {
-                          alert("Please select a date for Stage 2.");
-                        }
-                      }}
-                      className="px-4 py-2 text-sm font-medium rounded-md shadow-md"
-                      style={{ 
-                        minHeight: '36px', 
-                        minWidth: '150px',
-                        backgroundColor: '#000000',
-                        color: '#ffffff',
-                        border: '1px solid #333333'
-                      }}
-                    >
-                      <CalendarIcon className="w-4 h-4 mr-2" style={{ color: '#ffffff' }} />
-                      <span style={{ color: '#ffffff' }}>Book Stage 2</span>
-                    </Button>
-                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <Label>Location (Google Maps)</Label>
+                    <Input placeholder="Paste Google Maps link or address" value={newProject.location} onChange={(e)=>setNewProject({ ...newProject, location: e.target.value })} />
                 </div>
-              )}
-
-              {/* Stage 2 Summary - Show after booking */}
-              {newProject.jobType === "stage-2" && newProject.stage2Booked && (
-                <div className="space-y-4 p-4 border border-green-200 rounded-lg bg-green-50">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-md font-semibold text-green-800">Stage 2 Booked</h4>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setNewProject({ ...newProject, stage2Booked: false })}
-                      className="text-xs"
-                    >
-                      Edit
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <Label className="text-sm font-medium text-gray-600">Job Type</Label>
-                      <p className="text-sm font-semibold">Stage 2</p>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-sm font-medium text-gray-600">Date</Label>
-                      <p className="text-sm font-semibold">
-                        {newProject.stage2Date ? new Date(newProject.stage2Date).toLocaleDateString() : "Not set"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Full System Booking - Show only when Full System is selected */}
-              {newProject.jobType === "full-system" && !newProject.fullSystemBooked && (
-                <div className="space-y-4 p-4 border border-blue-200 rounded-lg bg-blue-50">
-                  <h4 className="text-md font-semibold text-blue-800">Book Full System</h4>
-                  <div className="space-y-2">
-                    <Label>Full System Date</Label>
-                    <Input
-                      type="date"
-                      value={newProject.fullSystemDate}
-                      onChange={(e) => setNewProject({ ...newProject, fullSystemDate: e.target.value })}
-                      min={new Date().toISOString().split('T')[0]}
-                    />
-                  </div>
-                  <div className="flex justify-center mt-6 mb-4">
-                    <Button 
-                      onClick={() => {
-                        if (newProject.fullSystemDate) {
-                          setNewProject({ ...newProject, fullSystemBooked: true });
-                          alert(`Full System booked for ${new Date(newProject.fullSystemDate).toLocaleDateString()}`);
-                        } else {
-                          alert("Please select a date for Full System.");
-                        }
-                      }}
-                      className="px-4 py-2 text-sm font-medium rounded-md shadow-md"
-                      style={{ 
-                        minHeight: '36px', 
-                        minWidth: '150px',
-                        backgroundColor: '#000000',
-                        color: '#ffffff',
-                        border: '1px solid #333333'
-                      }}
-                    >
-                      <CalendarIcon className="w-4 h-4 mr-2" style={{ color: '#ffffff' }} />
-                      <span style={{ color: '#ffffff' }}>Book Full System</span>
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Full System Summary - Show after booking */}
-              {newProject.jobType === "full-system" && newProject.fullSystemBooked && (
-                <div className="space-y-4 p-4 border border-green-200 rounded-lg bg-green-50">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-md font-semibold text-green-800">Full System Booked</h4>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setNewProject({ ...newProject, fullSystemBooked: false })}
-                      className="text-xs"
-                    >
-                      Edit
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <Label className="text-sm font-medium text-gray-600">Job Type</Label>
-                      <p className="text-sm font-semibold">Full System</p>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-sm font-medium text-gray-600">Date</Label>
-                      <p className="text-sm font-semibold">
-                        {newProject.fullSystemDate ? new Date(newProject.fullSystemDate).toLocaleDateString() : "Not set"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
 
-            {/* System Type Selection */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">System Type</h3>
-              <Select value={selectedSystemType} onValueChange={setSelectedSystemType}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select system type" />
-                </SelectTrigger>
+                {/* Client info */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                    <Label>Client Type</Label>
+                    <Select value={newProject.clientType || undefined} onValueChange={(v)=>setNewProject({ ...newProject, clientType: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select client type" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="pv-only">PV Only</SelectItem>
-                  <SelectItem value="pv-battery">PV+Battery</SelectItem>
-                  <SelectItem value="only-battery">Only Battery</SelectItem>
-                  <SelectItem value="only-ev-charger">Only EV Charger</SelectItem>
-                  <SelectItem value="pv-battery-ev-charger">PV+Battery+EV Charger</SelectItem>
-                  <SelectItem value="battery-ev-charger">Battery+EV Charger</SelectItem>
-                  <SelectItem value="pv-ev-charger">PV+EV Charger</SelectItem>
+                        <SelectItem value="Retailer">Retailer</SelectItem>
+                        <SelectItem value="Builder">Builder</SelectItem>
                 </SelectContent>
               </Select>
+                    </div>
+                  <div className="space-y-2">
+                    <Label>Client Name</Label>
+                    <Input value={newProject.clientName} onChange={(e)=>setNewProject({ ...newProject, clientName: e.target.value })} />
+                  </div>
             </div>
 
-            {/* Customer Information */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Customer Information</h3>
+                {/* Site inspection date/time */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Customer Name*</Label>
-                  <Input 
-                    value={newProject.customerName}
-                    onChange={(e) => setNewProject({ ...newProject, customerName: e.target.value })}
-                    placeholder="Enter customer name"
-                  />
+                    <Label>Site Inspection Date</Label>
+                    <Input type="date" value={newProject.siteInspectionDate} onChange={(e)=>setNewProject({ ...newProject, siteInspectionDate: e.target.value })} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Customer Email*</Label>
-                  <Input 
-                    value={newProject.customerEmail}
-                    onChange={(e) => setNewProject({ ...newProject, customerEmail: e.target.value })}
-                    placeholder="customer@email.com"
-                  />
+                    <Label>Site Inspection Time</Label>
+                    <Input type="time" value={newProject.siteInspectionTime} onChange={(e)=>setNewProject({ ...newProject, siteInspectionTime: e.target.value })} />
                 </div>
-                <div className="space-y-2">
-                  <Label>Customer Contact Number*</Label>
-                  <Input 
-                    value={newProject.customerContact}
-                    onChange={(e) => setNewProject({ ...newProject, customerContact: e.target.value })}
-                    placeholder="+61 4XX XXX XXX"
-                  />
                 </div>
-                <div className="space-y-2">
-                  <Label>Customer Address*</Label>
-                  <Input 
-                    value={newProject.customerAddress}
-                    onChange={(e) => setNewProject({ ...newProject, customerAddress: e.target.value })}
-                    placeholder="Start typing address..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Location (Google Maps)</Label>
-                  <Input 
-                    value={newProject.location}
-                    onChange={(e) => setNewProject({ ...newProject, location: e.target.value })}
-                    placeholder="Search location"
-                  />
-                </div>
-              </div>
-            </div>
 
-            {/* Property Information */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Property Information</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {/* Price */}
                 <div className="space-y-2">
-                  <Label>House Storey</Label>
-                  <Select onValueChange={(value) => handleOtherSelection('houseStorey', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select storey" />
-                    </SelectTrigger>
+                  <Label>Price (AUD)</Label>
+                  <Input value={newProject.priceAud} onChange={(e)=>setNewProject({ ...newProject, priceAud: e.target.value })} placeholder="e.g., 8500" />
+                </div>
+
+                {/* System type + conditional fields */}
+                <div className="space-y-2">
+                  <Label>System Type</Label>
+                  <Select value={newProject.systemType} onValueChange={(v)=>setNewProject({ ...newProject, systemType: v })}>
+                    <SelectTrigger><SelectValue placeholder="Select system type" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="single">Single</SelectItem>
-                      <SelectItem value="double">Double</SelectItem>
-                      <SelectItem value="triple">Triple</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="Only PV">Only PV</SelectItem>
+                      <SelectItem value="PV+Battery">PV+Battery</SelectItem>
+                      <SelectItem value="PV+Battery+EV Charger">PV+Battery+EV Charger</SelectItem>
+                      <SelectItem value="Only Battery">Only Battery</SelectItem>
+                      <SelectItem value="Only EV Charger">Only EV Charger</SelectItem>
+                      <SelectItem value="PV+EV Charger">PV+EV Charger</SelectItem>
+                      <SelectItem value="Battery+EV Charger">Battery+EV Charger</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                {otherSelections.houseStorey === 'other' && (
+
+                {/* PV fields */}
+                {["Only PV","PV+Battery","PV+Battery+EV Charger","PV+EV Charger"].includes(newProject.systemType) && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>PV System Size (kW)</Label><Input value={newProject.pvSystemSizeKw} onChange={(e)=>setNewProject({ ...newProject, pvSystemSizeKw: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Inverter Size (kW)</Label><Input value={newProject.inverterSizeKw} onChange={(e)=>setNewProject({ ...newProject, inverterSizeKw: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Inverter Brand</Label><Input value={newProject.inverterBrand} onChange={(e)=>setNewProject({ ...newProject, inverterBrand: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Model Number</Label><Input value={newProject.inverterModel} onChange={(e)=>setNewProject({ ...newProject, inverterModel: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Panel Brand</Label><Input value={newProject.panelBrand} onChange={(e)=>setNewProject({ ...newProject, panelBrand: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Panel Module (watts)</Label><Input value={newProject.panelModuleWatts} onChange={(e)=>setNewProject({ ...newProject, panelModuleWatts: e.target.value })} /></div>
+              </div>
+              )}
+
+                {/* Battery fields */}
+                {["Only Battery","PV+Battery","PV+Battery+EV Charger","Battery+EV Charger"].includes(newProject.systemType) && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>Battery Size (kWh)</Label><Input value={newProject.batterySizeKwh} onChange={(e)=>setNewProject({ ...newProject, batterySizeKwh: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Battery Brand</Label><Input value={newProject.batteryBrand} onChange={(e)=>setNewProject({ ...newProject, batteryBrand: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Battery Model</Label><Input value={newProject.batteryModel} onChange={(e)=>setNewProject({ ...newProject, batteryModel: e.target.value })} /></div>
+            </div>
+              )}
+
+                {/* EV Charger fields */}
+                {["Only EV Charger","PV+EV Charger","PV+Battery+EV Charger","Battery+EV Charger"].includes(newProject.systemType) && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>EV Charger Brand</Label><Input value={newProject.evChargerBrand} onChange={(e)=>setNewProject({ ...newProject, evChargerBrand: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>EV Charger Model</Label><Input value={newProject.evChargerModel} onChange={(e)=>setNewProject({ ...newProject, evChargerModel: e.target.value })} /></div>
+                </div>
+              )}
+
+            {/* Property Information */}
+                <div className="space-y-2">
+                  <p className="font-medium">Property Information</p>
+                  <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>House Storey</Label>
+                      <Select value={newProject.houseStorey} onValueChange={(v)=>setNewProject({ ...newProject, houseStorey: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                          <SelectItem value="Single">Single</SelectItem>
+                          <SelectItem value="Double">Double</SelectItem>
+                          <SelectItem value="Triple">Triple</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                    {newProject.houseStorey === "Other" && (
                   <div className="space-y-2">
-                    <Label>Please specify house storey</Label>
-                    <Textarea 
-                      placeholder="Please specify the house storey details..." 
-                      className="min-h-[40px]"
-                      value={otherSelections.houseStoreyOther || ''}
-                      onChange={(e) => handleOtherSelection('houseStoreyOther', e.target.value)}
-                    />
+                        <Label>House Storey (Other)</Label>
+                        <Textarea value={newProject.houseStoreyOther} onChange={(e)=>setNewProject({ ...newProject, houseStoreyOther: e.target.value })} />
                   </div>
                 )}
                 <div className="space-y-2">
                   <Label>Roof Type</Label>
-                  <Select onValueChange={(value) => handleOtherSelection('roofType', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select roof type" />
-                    </SelectTrigger>
+                      <Select value={newProject.roofType} onValueChange={(v)=>setNewProject({ ...newProject, roofType: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="colorbond">ColorBond</SelectItem>
-                      <SelectItem value="tin-kliplock">Tin KlipLock</SelectItem>
-                      <SelectItem value="tin-kliplock-tily">Tin KlipLock+Tily</SelectItem>
-                      <SelectItem value="tile-terracotta">Tile Terracotta</SelectItem>
-                      <SelectItem value="tile-concrete">Tile Concrete</SelectItem>
-                      <SelectItem value="tile-shilung-terracotta">Tile Shilung+Terracotta</SelectItem>
-                      <SelectItem value="concrete">Concrete</SelectItem>
-                      <SelectItem value="na">NA</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                          <SelectItem value="Tin (Colorbond)">Tin (Colorbond)</SelectItem>
+                          <SelectItem value="Tin (Kliplock)">Tin (Kliplock)</SelectItem>
+                          <SelectItem value="Tile (Concrete)">Tile (Concrete)</SelectItem>
+                          <SelectItem value="Tile (Terracotta)">Tile (Terracotta)</SelectItem>
+                          <SelectItem value="Flat">Flat</SelectItem>
+                          <SelectItem value="NA">NA</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                {otherSelections.roofType === 'other' && (
+                    {newProject.roofType === "Other" && (
                   <div className="space-y-2">
-                    <Label>Please specify roof type</Label>
-                    <Textarea 
-                      placeholder="Please specify the roof type details..." 
-                      className="min-h-[40px]"
-                      value={otherSelections.roofTypeOther || ''}
-                      onChange={(e) => handleOtherSelection('roofTypeOther', e.target.value)}
-                    />
+                        <Label>Roof Type (Other)</Label>
+                        <Textarea value={newProject.roofTypeOther} onChange={(e)=>setNewProject({ ...newProject, roofTypeOther: e.target.value })} />
                   </div>
                 )}
                 <div className="space-y-2">
-                  <Label>Property Type</Label>
-                  <Select onValueChange={(value) => handleOtherSelection('propertyType', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select property type" />
-                    </SelectTrigger>
+                      <Label>Meter Phase</Label>
+                      <Select value={newProject.meterPhase} onValueChange={(v)=>setNewProject({ ...newProject, meterPhase: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="residential">Residential</SelectItem>
-                      <SelectItem value="commercial">Commercial</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                          <SelectItem value="Single">Single</SelectItem>
+                          <SelectItem value="Double">Double</SelectItem>
+                          <SelectItem value="Three">Three</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                {otherSelections.propertyType === 'other' && (
                   <div className="space-y-2">
-                    <Label>Please specify property type</Label>
-                    <Textarea 
-                      placeholder="Please specify the property type details..." 
-                      className="min-h-[40px]"
-                      value={otherSelections.propertyTypeOther || ''}
-                      onChange={(e) => handleOtherSelection('propertyTypeOther', e.target.value)}
-                    />
+                      <Label>Access to 2 Storey</Label>
+                      <Select value={newProject.accessSecondStorey} onValueChange={(v)=>setNewProject({ ...newProject, accessSecondStorey: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Yes">Yes</SelectItem>
+                          <SelectItem value="No">No</SelectItem>
+                          <SelectItem value="NA">NA</SelectItem>
+                        </SelectContent>
+                      </Select>
                   </div>
-                )}
                 <div className="space-y-2">
-                  <Label>Access To 2nd Storey</Label>
-                  <Select value={newProject.accessTo2ndStorey} onValueChange={(value) => setNewProject({ ...newProject, accessTo2ndStorey: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select access" />
-                    </SelectTrigger>
+                      <Label>Access to Inverter</Label>
+                      <Select value={newProject.accessToInverter} onValueChange={(v)=>setNewProject({ ...newProject, accessToInverter: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="yes">Yes</SelectItem>
-                      <SelectItem value="no">No</SelectItem>
-                      <SelectItem value="partial">Partial</SelectItem>
+                          <SelectItem value="Yes">Yes</SelectItem>
+                          <SelectItem value="No">No</SelectItem>
+                          <SelectItem value="No Access Required">No Access Required</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>Access To Inverter</Label>
-                  <Select value={newProject.accessToInverter} onValueChange={(value) => setNewProject({ ...newProject, accessToInverter: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select access" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="full">Full</SelectItem>
-                      <SelectItem value="partial">Partial</SelectItem>
-                      <SelectItem value="no">No</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Monitoring</Label>
-                  <Select onValueChange={(value) => handleOtherSelection('monitoring', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select monitoring" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="yes">Yes</SelectItem>
-                      <SelectItem value="no">No</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {otherSelections.monitoring === 'yes' && (
-                  <div className="space-y-2">
-                    <Label>How Much?</Label>
-                    <Textarea 
-                      placeholder="Please specify monitoring details..." 
-                      className="min-h-[40px]"
-                      value={otherSelections.monitoringOther || ''}
-                      onChange={(e) => handleOtherSelection('monitoringOther', e.target.value)}
-                    />
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
 
-            {/* System Information - Only visible when system type is selected */}
-            {selectedSystemType && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">System Information</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Left Column - Sizes */}
-                  <div className="space-y-4">
-                    {/* System Size - Show for all system types */}
+                {/* Utility Information */}
+                <div className="space-y-2">
+                  <p className="font-medium">Utility Information</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>Energy Retailer</Label><Input value={newProject.energyRetailer} onChange={(e)=>setNewProject({ ...newProject, energyRetailer: e.target.value })} /></div>
                     <div className="space-y-2">
-                      <Label>System Size (kW)</Label>
-                      <Input 
-                        value={newProject.systemSize}
-                        onChange={(e) => setNewProject({ ...newProject, systemSize: e.target.value })}
-                        placeholder="e.g., 6.6"
-                      />
-                    </div>
-                    
-                    {/* Inverter Size - Show for PV systems */}
-                    {(selectedSystemType.includes('pv') || selectedSystemType.includes('battery')) && (
-                      <div className="space-y-2">
-                        <Label>Inverter Size (kW)</Label>
-                        <Input 
-                          value={newProject.inverterSize}
-                          onChange={(e) => setNewProject({ ...newProject, inverterSize: e.target.value })}
-                          placeholder="e.g., 5.0"
-                        />
+                      <Label>Energy Distributor</Label>
+                      <Select value={newProject.energyDistributor} onValueChange={(v)=>setNewProject({ ...newProject, energyDistributor: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select distributor" /></SelectTrigger>
+                    <SelectContent>
+                          <SelectItem value="AusNet">AusNet</SelectItem>
+                          <SelectItem value="PowerCor">PowerCor</SelectItem>
+                          <SelectItem value="CitiPower">CitiPower</SelectItem>
+                          <SelectItem value="United Energy">Uniter Energy</SelectItem>
+                          <SelectItem value="Jemena">Jemena</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                      <Label>Solar Victoria Eligibility</Label>
+                      <Select value={newProject.solarVictoriaEligible} onValueChange={(v)=>setNewProject({ ...newProject, solarVictoriaEligible: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                          <SelectItem value="Yes">Yes</SelectItem>
+                          <SelectItem value="No">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                    <div className="space-y-2"><Label>Pre-Approval Reference Number</Label><Input value={newProject.preApprovalNumber} onChange={(e)=>setNewProject({ ...newProject, preApprovalNumber: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>NMI Number</Label><Input value={newProject.nmiNumber} onChange={(e)=>setNewProject({ ...newProject, nmiNumber: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Meter Number</Label><Input value={newProject.meterNumber} onChange={(e)=>setNewProject({ ...newProject, meterNumber: e.target.value })} /></div>
+                  </div>
+              </div>
                       </div>
                     )}
-                    
-                    {/* Battery Size - Show for battery systems */}
-                    {(selectedSystemType.includes('battery')) && (
+            {newProject.status !== "site-inspection" && newProject.status !== "retailer-new" && (
+              <>
+                {/* Project Name */}
                       <div className="space-y-2">
-                        <Label>Battery Size (kWh)</Label>
+                  <Label htmlFor="name">Project Name *</Label>
                         <Input 
-                          value={newProject.batterySize}
-                          onChange={(e) => setNewProject({ ...newProject, batterySize: e.target.value })}
-                          placeholder="e.g., 10.0"
-                        />
-                      </div>
-                    )}
+                    id="name"
+                    value={newProject.name}
+                    onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
+                    placeholder="Enter project name"
+                  />
                   </div>
                   
-                  {/* Right Column - Brands */}
-                  <div className="space-y-4">
-                    {/* Panel Brand - Show for PV systems */}
-                    {(selectedSystemType.includes('pv')) && (
+                {/* Priority and System Size */}
+                <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label>Panel Brand</Label>
-                        <Select onValueChange={(value) => handleOtherSelection('panelBrand', value)}>
+                    <Label htmlFor="priority">Priority</Label>
+                    <Select
+                      value={newProject.priority}
+                      onValueChange={(value) => setNewProject({ ...newProject, priority: value as Priority })}
+                    >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select Panel Brand" />
+                        <SelectValue placeholder="Select priority" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="sunpower">SunPower</SelectItem>
-                            <SelectItem value="lg">LG</SelectItem>
-                            <SelectItem value="panasonic">Panasonic</SelectItem>
-                            <SelectItem value="jinko">Jinko</SelectItem>
-                            <SelectItem value="canadian-solar">Canadian Solar</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
                           </SelectContent>
                         </Select>
-                        {otherSelections.panelBrand === 'other' && (
-                          <Textarea 
-                            placeholder="Please specify panel brand..." 
-                            className="min-h-[40px]"
-                            value={otherSelections.panelBrandOther || ''}
-                            onChange={(e) => handleOtherSelection('panelBrandOther', e.target.value)}
-                          />
-                        )}
                       </div>
-                    )}
                     
-                    {/* Inverter Brand - Show for PV and battery systems */}
-                    {(selectedSystemType.includes('pv') || selectedSystemType.includes('battery')) && (
                       <div className="space-y-2">
-                        <Label>Inverter Brand</Label>
-                        <Select onValueChange={(value) => handleOtherSelection('inverterBrand', value)}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select Inverter Brand" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="enphase">Enphase</SelectItem>
-                            <SelectItem value="solaredge">SolarEdge</SelectItem>
-                            <SelectItem value="fronius">Fronius</SelectItem>
-                            <SelectItem value="sma">SMA</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        {otherSelections.inverterBrand === 'other' && (
-                          <Textarea 
-                            placeholder="Please specify inverter brand..." 
-                            className="min-h-[40px]"
-                            value={otherSelections.inverterBrandOther || ''}
-                            onChange={(e) => handleOtherSelection('inverterBrandOther', e.target.value)}
-                          />
-                        )}
+                    <Label htmlFor="systemSize">System Size *</Label>
+                    <Input
+                      id="systemSize"
+                      value={newProject.systemSize}
+                      onChange={(e) => setNewProject({ ...newProject, systemSize: e.target.value })}
+                      placeholder="e.g., 5kW System"
+                    />
                       </div>
-                    )}
-                    
-                    {/* Battery Brand - Show for battery systems */}
-                    {(selectedSystemType.includes('battery')) && (
-                      <div className="space-y-2">
-                        <Label>Battery Brand</Label>
-                        <Select onValueChange={(value) => handleOtherSelection('batteryBrand', value)}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select Battery Brand" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="tesla">Tesla Powerwall</SelectItem>
-                            <SelectItem value="lg">LG Chem</SelectItem>
-                            <SelectItem value="enphase">Enphase</SelectItem>
-                            <SelectItem value="sonnen">Sonnen</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        {otherSelections.batteryBrand === 'other' && (
-                          <Textarea 
-                            placeholder="Please specify battery brand..." 
-                            className="min-h-[40px]"
-                            value={otherSelections.batteryBrandOther || ''}
-                            onChange={(e) => handleOtherSelection('batteryBrandOther', e.target.value)}
-                          />
-                        )}
-                      </div>
-                    )}
-
-                    {/* EV Charger Brand - Show for EV charger systems */}
-                    {(selectedSystemType.includes('ev-charger')) && (
-                      <div className="space-y-2">
-                        <Label>EV Charger Brand</Label>
-                        <Select onValueChange={(value) => handleOtherSelection('evChargerBrand', value)}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select EV Charger Brand" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="tesla">Tesla</SelectItem>
-                            <SelectItem value="chargepoint">ChargePoint</SelectItem>
-                            <SelectItem value="wallbox">Wallbox</SelectItem>
-                            <SelectItem value="juicebox">JuiceBox</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        {otherSelections.evChargerBrand === 'other' && (
-                          <Textarea 
-                            placeholder="Please specify EV charger brand..." 
-                            className="min-h-[40px]"
-                            value={otherSelections.evChargerBrandOther || ''}
-                            onChange={(e) => handleOtherSelection('evChargerBrandOther', e.target.value)}
-                          />
-                        )}
-                      </div>
-                    )}
-                  </div>
                 </div>
-              </div>
-            )}
+                    
+                {/* Type and Cost */}
+                <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                    <Label htmlFor="type">Project Type</Label>
+                    <Select
+                      value={newProject.type}
+                      onValueChange={(value) => setNewProject({ ...newProject, type: value as ProjectType })}
+                    >
+                          <SelectTrigger>
+                        <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                        <SelectItem value="Residential">Residential</SelectItem>
+                        <SelectItem value="Commercial">Commercial</SelectItem>
+                        <SelectItem value="Industrial">Industrial</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-            {/* Project Timeline */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Project Timeline</h3>
+                      <div className="space-y-2">
+                    <Label htmlFor="cost">Cost *</Label>
+                    <Input
+                      id="cost"
+                      value={newProject.cost}
+                      onChange={(e) => setNewProject({ ...newProject, cost: e.target.value })}
+                      placeholder="e.g., $8,500"
+                    />
+                      </div>
+                  </div>
+
+                {/* Dates */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Start Date</Label>
+                    <Label htmlFor="startDate">Start Date</Label>
                   <Input
-                    type="date"
+                      id="startDate"
                     value={newProject.startDate}
                     onChange={(e) => setNewProject({ ...newProject, startDate: e.target.value })}
+                      placeholder="e.g., Nov 1"
                   />
                 </div>
+
                 <div className="space-y-2">
-                  <Label>End Date</Label>
+                    <Label htmlFor="endDate">End Date</Label>
                   <Input
-                    type="date"
+                      id="endDate"
                     value={newProject.endDate}
                     onChange={(e) => setNewProject({ ...newProject, endDate: e.target.value })}
+                      placeholder="e.g., Nov 3"
                   />
-                </div>
               </div>
             </div>
 
-            {/* Assignees */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Assignees</h3>
+                {/* Assignee */}
               <div className="space-y-2">
-                <div className="flex flex-wrap gap-2 min-h-[40px] p-2 border rounded-md">
-                  {newProject.assignees && newProject.assignees.length > 0 ? (
-                    newProject.assignees.map((assignee, index) => (
-                      <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                        {assignee}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newAssignees = newProject.assignees.filter((_, i) => i !== index);
-                            setNewProject({ ...newProject, assignees: newAssignees });
-                          }}
-                          className="ml-1 hover:bg-gray-300 rounded-full w-4 h-4 flex items-center justify-center text-xs"
-                        >
-                          ×
-                        </button>
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-gray-500 text-sm">No assignees selected</span>
-                  )}
-                </div>
-                <AssigneeMultiSelect
-                  label="Add assignee"
-                  value={newProject.assignees ?? []}
-                  onChange={(next) => setNewProject({ ...newProject, assignees: next })}
-                  placeholder={
-                    newProjectAssigneeOptions.length > 0
-                      ? "Select assignees"
-                      : "No resources found"
-                  }
-                  options={newProjectAssigneeOptions}
+                  <Label htmlFor="assignee">Assignee</Label>
+                  <Input
+                    id="assignee"
+                    value={newProject.assignee}
+                    onChange={(e) => setNewProject({ ...newProject, assignee: e.target.value })}
+                    placeholder="e.g., TA, TB"
                 />
               </div>
+              </>
+            )}
             </div>
 
-            {/* Project Notes */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Project Notes</h3>
-              <Textarea
-                value={newProject.description}
-                onChange={(e) => setNewProject({ ...newProject, description: e.target.value })}
-                placeholder="Additional project notes and requirements..."
-                rows={4}
-              />
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-4 border-t">
+          <DialogFooter className="flex flex-row gap-2 px-6 py-4 border-t bg-white flex-shrink-0 justify-end w-full sticky bottom-0 z-10">
               <Button variant="outline" onClick={() => setShowNewProjectDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleNewProjectSubmit} className="flex-1">
+            <Button 
+              onClick={handleAddProject} 
+              variant="outline"
+              className="text-gray-900 border border-gray-300 bg-white hover:bg-teal-600 hover:text-white hover:border-teal-600 min-w-[140px] flex items-center justify-center"
+            >
                 <Plus className="w-4 h-4 mr-2" />
-                Create Project
+              {newProject.status === "site-inspection" || newProject.status === "retailer-new" ? "Create Project" : "Create Project"}
               </Button>
-            </div>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Enhanced Project Details/Edit Dialog */}
-      <Dialog open={showProjectDetails} onOpenChange={setShowProjectDetails}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+      {/* Project Details Dialog */}
+      <Dialog open={showProjectDetailsDialog} onOpenChange={setShowProjectDetailsDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b">
             <DialogTitle className="flex items-center justify-between">
-              <span>Edit Project - {editingProject?.title}</span>
-              <Button variant="ghost" size="sm" onClick={() => setShowProjectDetails(false)}>
+              <span>Project Details</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowProjectDetailsDialog(false)}
+              >
                 <X className="w-4 h-4" />
               </Button>
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              View and edit project details, assignees, and comments
+            </DialogDescription>
           </DialogHeader>
           
-          {editingProject && (
-            <div className="space-y-6">
-                {/* Project Overview */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Project Overview</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label>Project Name</Label>
+          {selectedProject && (
+            <div className="space-y-6 px-6 py-4 overflow-y-auto flex-1" style={{ maxHeight: 'calc(90vh - 200px)' }}>
+              {/* Project Name and Priority */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <Label className="text-gray-500 text-sm">Project Name</Label>
                       <Input 
-                        value={editingProject.title}
-                        onChange={(e) => handleUpdateProject({ title: e.target.value })}
-                        placeholder="Enter project name"
-                      />
+                    value={selectedProject.name}
+                    onChange={(e) => setSelectedProject({ ...selectedProject, name: e.target.value })}
+                    className="text-xl font-bold mt-1"
+                  />
+                  <p className="text-gray-600 mt-1 text-sm">Project ID: {selectedProject.id}</p>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Value</Label>
-                      <Input 
-                        value={editingProject.value}
-                        onChange={(e) => handleUpdateProject({ value: e.target.value })}
-                        placeholder="e.g., $15,000"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Priority</Label>
-                      <Select value={editingProject.priority} onValueChange={(value) => handleUpdateProject({ priority: value })}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select priority" />
+                <div className="space-y-1">
+                  <Label className="text-gray-500 text-sm">Priority</Label>
+                  <Select
+                    value={selectedProject.priority}
+                    onValueChange={(value) => setSelectedProject({ ...selectedProject, priority: value as Priority })}
+                  >
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="low">Low</SelectItem>
@@ -2483,929 +3397,1495 @@ export function ProjectManagementScreen() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Status</Label>
-                      <Select value={editingProject.status} onValueChange={handleStatusChange}>
+                </div>
+
+              {/* Project Information Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label className="text-gray-500">System Size</Label>
+                  <Input
+                    value={selectedProject.systemSize}
+                    onChange={(e) => setSelectedProject({ ...selectedProject, systemSize: e.target.value })}
+                    placeholder="e.g., 6.6kW"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-gray-500">Project Type</Label>
+                  <Select
+                    value={selectedProject.type}
+                    onValueChange={(value) => setSelectedProject({ ...selectedProject, type: value as ProjectType })}
+                  >
                         <SelectTrigger>
-                          <SelectValue placeholder="Select status" />
+                      <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="new">New</SelectItem>
-                          <SelectItem value="site-inspection">Site Inspection</SelectItem>
-                          <SelectItem value="stage-1">Stage 1</SelectItem>
-                          <SelectItem value="stage-2">Stage 2</SelectItem>
-                          <SelectItem value="full-system">Full System</SelectItem>
-                          <SelectItem value="canceled">Canceled</SelectItem>
-                          <SelectItem value="to-be-scheduled">To Be Scheduled</SelectItem>
-                          <SelectItem value="scheduled">Scheduled</SelectItem>
-                          <SelectItem value="to-be-rescheduled">To Be Rescheduled</SelectItem>
-                          <SelectItem value="completed">Installation Completed</SelectItem>
-                          <SelectItem value="ces-certificate-applied">CES Certificate Applied</SelectItem>
-                          <SelectItem value="ces-certificate-received">CES Certificate Received</SelectItem>
-                          <SelectItem value="ces-certificate-submitted">CES Certificate Submitted</SelectItem>
-                          <SelectItem value="grid-connect-initiated">Grid Connect Initiated</SelectItem>
-                          <SelectItem value="grid-connection-completed">Grid Connection Completed</SelectItem>
-                          <SelectItem value="system-handover">System Handover</SelectItem>
-                          <SelectItem value="done">Done</SelectItem>
+                      <SelectItem value="Residential">Residential</SelectItem>
+                      <SelectItem value="Commercial">Commercial</SelectItem>
+                      <SelectItem value="Industrial">Industrial</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Assignee</Label>
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap gap-2 min-h-[40px] p-2 border rounded-md">
-                          {editingProject.assignees && editingProject.assignees.length > 0 ? (
-                            editingProject.assignees.map((assignee, index) => (
-                              <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                                {assignee}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const newAssignees = editingProject.assignees.filter((_, i) => i !== index);
-                                    handleUpdateProject({ assignees: newAssignees });
-                                  }}
-                                  className="ml-1 hover:bg-gray-300 rounded-full w-4 h-4 flex items-center justify-center text-xs"
-                                >
-                                  ×
-                                </button>
-                              </Badge>
-                            ))
-                          ) : (
-                            <span className="text-gray-500 text-sm">No assignees selected</span>
-                          )}
-                        </div>
-                        <AssigneeMultiSelect
-                          label="Add assignee"
-                          value={editingProject.assignees ?? []}
-                          onChange={(next) => handleUpdateProject({ assignees: next })}
-                          placeholder={
-                            editingAssigneeOptions.length > 0
-                              ? "Select assignees"
-                              : "No resources found"
-                          }
-                          options={editingAssigneeOptions}
+                <div className="space-y-1">
+                  <Label className="text-gray-500">Cost</Label>
+                      <Input
+                    value={selectedProject.cost}
+                    onChange={(e) => setSelectedProject({ ...selectedProject, cost: e.target.value })}
+                    placeholder="e.g., $15,000"
                         />
-                      </div>
-                    </div>
                   </div>
                 </div>
 
-                {/* System Type Selection */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">System Type</h3>
-                  <Select value={selectedSystemType} onValueChange={setSelectedSystemType}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select system type" />
+              {/* Project Details Section */}
+              <div className="pt-4 border-t space-y-4">
+                <h4 className="font-semibold text-lg text-gray-900">Project Details</h4>
+                
+                {/* Customer Information for retailer projects */}
+                {(() => {
+                  const isRetailerProject = selectedProject.status === "retailer-new" || 
+                                            ["site-inspection", "stage-one", "stage-two", "full-system", "canceled"].includes(selectedProject.status);
+                  return isRetailerProject && selectedProject.projectDetails?.additionalInfo;
+                })() && (
+                    <div className="space-y-2">
+                    <Label className="text-gray-700 font-medium">Customer Information</Label>
+                    <div className="grid grid-cols-2 gap-4 pl-4">
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Customer Name</Label>
+                      <Input 
+                          value={selectedProject.name || ''}
+                          onChange={(e) => setSelectedProject({ ...selectedProject, name: e.target.value })}
+                          className="text-sm"
+                      />
+                    </div>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Customer Email</Label>
+                      <Input 
+                          type="email"
+                          value={selectedProject.projectDetails?.additionalInfo?.customerEmail || ''}
+                          onChange={(e) => {
+                            const additionalInfo = { ...(selectedProject.projectDetails?.additionalInfo || {}), customerEmail: e.target.value };
+                            setSelectedProject({
+                              ...selectedProject,
+                              projectDetails: { ...(selectedProject.projectDetails || {}), additionalInfo }
+                            });
+                          }}
+                          className="text-sm"
+                      />
+                        </div>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Customer Contact</Label>
+                      <Input 
+                          value={selectedProject.projectDetails?.additionalInfo?.customerContact || ''}
+                          onChange={(e) => {
+                            const additionalInfo = { ...(selectedProject.projectDetails?.additionalInfo || {}), customerContact: e.target.value };
+                            setSelectedProject({
+                              ...selectedProject,
+                              projectDetails: { ...(selectedProject.projectDetails || {}), additionalInfo }
+                            });
+                          }}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Customer Address</Label>
+                      <Input 
+                          value={selectedProject.projectDetails?.additionalInfo?.customerAddress || ''}
+                          onChange={(e) => {
+                            const additionalInfo = { ...(selectedProject.projectDetails?.additionalInfo || {}), customerAddress: e.target.value };
+                            setSelectedProject({
+                              ...selectedProject,
+                              projectDetails: { ...(selectedProject.projectDetails || {}), additionalInfo }
+                            });
+                          }}
+                          className="text-sm"
+                      />
+                    </div>
+                      <div className="space-y-1 col-span-2">
+                        <Label className="text-gray-500 text-xs">Location (Google Maps)</Label>
+                        <Input
+                          value={selectedProject.projectDetails?.additionalInfo?.location || ''}
+                          onChange={(e) => {
+                            const additionalInfo = { ...(selectedProject.projectDetails?.additionalInfo || {}), location: e.target.value };
+                            setSelectedProject({
+                              ...selectedProject,
+                              projectDetails: { ...(selectedProject.projectDetails || {}), additionalInfo }
+                            });
+                          }}
+                          className="text-sm"
+                        />
+                  </div>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Client Type</Label>
+                        <Select
+                          value={selectedProject.projectDetails?.clientType || ''}
+                          onValueChange={(v) => setSelectedProject({
+                            ...selectedProject,
+                            projectDetails: { ...(selectedProject.projectDetails || {}), clientType: v }
+                          })}
+                        >
+                          <SelectTrigger className="text-sm h-9">
+                            <SelectValue placeholder="Select client type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Retailer">Retailer</SelectItem>
+                            <SelectItem value="Builder">Builder</SelectItem>
+                          </SelectContent>
+                        </Select>
+                </div>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Client Name</Label>
+                        <Input 
+                          value={selectedProject.projectDetails?.additionalInfo?.clientName || ''}
+                          onChange={(e) => {
+                            const additionalInfo = { ...(selectedProject.projectDetails?.additionalInfo || {}), clientName: e.target.value };
+                            setSelectedProject({
+                              ...selectedProject,
+                              projectDetails: { ...(selectedProject.projectDetails || {}), additionalInfo }
+                            });
+                          }}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Job Type</Label>
+                        <Select
+                          value={selectedProject.projectDetails?.additionalInfo?.jobType || ''}
+                          onValueChange={(v) => {
+                            // Map job type to status
+                            const jobTypeToStatus: Record<string, ProjectStatus> = {
+                              "Site Inspection": "site-inspection",
+                              "Stage One": "stage-one",
+                              "Stage Two": "stage-two",
+                              "Full System": "full-system"
+                            };
+                            const newStatus = jobTypeToStatus[v] || selectedProject.status;
+                            
+                            const additionalInfo = { ...(selectedProject.projectDetails?.additionalInfo || {}), jobType: v };
+                            setSelectedProject({
+                              ...selectedProject,
+                              status: newStatus,
+                              projectDetails: { ...(selectedProject.projectDetails || {}), additionalInfo }
+                            });
+                          }}
+                        >
+                          <SelectTrigger className="text-sm h-9">
+                            <SelectValue placeholder="Select job type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="pv-only">PV Only</SelectItem>
-                      <SelectItem value="pv-battery">PV+Battery</SelectItem>
-                      <SelectItem value="only-battery">Only Battery</SelectItem>
-                      <SelectItem value="only-ev-charger">Only EV Charger</SelectItem>
-                      <SelectItem value="pv-battery-ev-charger">PV+Battery+EV Charger</SelectItem>
-                      <SelectItem value="battery-ev-charger">Battery+EV Charger</SelectItem>
-                      <SelectItem value="pv-ev-charger">PV+EV Charger</SelectItem>
+                            <SelectItem value="Site Inspection">Site Inspection</SelectItem>
+                            <SelectItem value="Stage One">Stage One</SelectItem>
+                            <SelectItem value="Stage Two">Stage Two</SelectItem>
+                            <SelectItem value="Full System">Full System</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-
-                {/* Customer Information */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Customer Information</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Customer Name*</Label>
+                      {selectedProject.projectDetails?.additionalInfo?.jobType === "Site Inspection" && (
+                        <>
+                          <div className="space-y-1">
+                            <Label className="text-gray-500 text-xs">Site Inspection Date</Label>
                       <Input 
-                        value={editingProject.customerName || ""}
-                        onChange={(e) => handleUpdateProject({ customerName: e.target.value })}
-                        placeholder="Enter customer name"
+                              type="date"
+                              value={selectedProject.projectDetails?.additionalInfo?.siteInspection?.date || ''}
+                              onChange={(e) => {
+                                const additionalInfo = {
+                                  ...(selectedProject.projectDetails?.additionalInfo || {}),
+                                  siteInspection: { ...(selectedProject.projectDetails?.additionalInfo?.siteInspection || {}), date: e.target.value }
+                                };
+                                setSelectedProject({
+                                  ...selectedProject,
+                                  projectDetails: { ...(selectedProject.projectDetails || {}), additionalInfo }
+                                });
+                              }}
+                              className="text-sm"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Customer Email*</Label>
+                          <div className="space-y-1">
+                            <Label className="text-gray-500 text-xs">Site Inspection Time</Label>
                       <Input 
-                        value={editingProject.customerEmail || ""}
-                        onChange={(e) => handleUpdateProject({ customerEmail: e.target.value })}
-                        placeholder="customer@email.com"
+                              type="time"
+                              value={selectedProject.projectDetails?.additionalInfo?.siteInspection?.time || ''}
+                              onChange={(e) => {
+                                const additionalInfo = {
+                                  ...(selectedProject.projectDetails?.additionalInfo || {}),
+                                  siteInspection: { ...(selectedProject.projectDetails?.additionalInfo?.siteInspection || {}), time: e.target.value }
+                                };
+                                setSelectedProject({
+                                  ...selectedProject,
+                                  projectDetails: { ...(selectedProject.projectDetails || {}), additionalInfo }
+                                });
+                              }}
+                              className="text-sm"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Customer Contact Number*</Label>
+                        </>
+                      )}
+                      {["Stage One", "Stage Two", "Full System"].includes(selectedProject.projectDetails?.additionalInfo?.jobType) && (
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">{selectedProject.projectDetails?.additionalInfo?.jobType} Date</Label>
                       <Input 
-                        value={editingProject.customerContact || ""}
-                        onChange={(e) => handleUpdateProject({ customerContact: e.target.value })}
-                        placeholder="+61 4XX XXX XXX"
+                            type="date"
+                            value={selectedProject.projectDetails?.additionalInfo?.jobDate || ''}
+                            onChange={(e) => {
+                              const additionalInfo = { ...(selectedProject.projectDetails?.additionalInfo || {}), jobDate: e.target.value };
+                              setSelectedProject({
+                                ...selectedProject,
+                                projectDetails: { ...(selectedProject.projectDetails || {}), additionalInfo }
+                              });
+                            }}
+                            className="text-sm"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Customer Address*</Label>
+                      )}
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Price (AUD)</Label>
                       <Input 
-                        value={editingProject.customerAddress || ""}
-                        onChange={(e) => handleUpdateProject({ customerAddress: e.target.value })}
-                        placeholder="Start typing address..."
+                          value={selectedProject.cost || selectedProject.projectDetails?.additionalInfo?.priceAud || ''}
+                          onChange={(e) => {
+                            const additionalInfo = { ...(selectedProject.projectDetails?.additionalInfo || {}), priceAud: e.target.value };
+                            setSelectedProject({
+                              ...selectedProject,
+                              cost: e.target.value,
+                              projectDetails: { ...(selectedProject.projectDetails || {}), additionalInfo }
+                            });
+                          }}
+                          className="text-sm"
                       />
                     </div>
                   </div>
                 </div>
+                )}
 
-                {/* On-Field Site Visit Information - Show only for projects from on-field visits */}
-                {editingProject.onFieldVisitId && (
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold">On-Field Site Assessment</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {/* Detailed Project Information from projectSnapshot (only show if projectSnapshot exists) */}
+                {selectedProject.projectSnapshot && (
                       <div className="space-y-2">
-                        <Label>Roof Assessment</Label>
-                        <Select value={editingProject.roofAssessment || ""} onValueChange={(value) => handleUpdateProject({ roofAssessment: value })}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select roof condition" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Excellent">Excellent</SelectItem>
-                            <SelectItem value="Good">Good</SelectItem>
-                            <SelectItem value="Fair">Fair</SelectItem>
-                            <SelectItem value="Poor">Poor</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Electrical Assessment</Label>
-                        <Select value={editingProject.electricalAssessment || ""} onValueChange={(value) => handleUpdateProject({ electricalAssessment: value })}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select electrical condition" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Excellent">Excellent</SelectItem>
-                            <SelectItem value="Good">Good</SelectItem>
-                            <SelectItem value="Fair">Fair</SelectItem>
-                            <SelectItem value="Needs Upgrade">Needs Upgrade</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Safety Score (%)</Label>
+                    <Label className="text-gray-700 font-medium">Project Information</Label>
+                    <div className="grid grid-cols-2 gap-4 pl-4">
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Title</Label>
                         <Input 
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={editingProject.safetyScore || ""}
-                          onChange={(e) => handleUpdateProject({ safetyScore: parseInt(e.target.value) })}
-                          placeholder="e.g., 95"
+                          value={selectedProject.projectSnapshot?.title || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), title: e.target.value }
+                          })}
+                          className="text-sm"
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label>Installation Readiness</Label>
-                        <Select value={editingProject.installationReadiness || ""} onValueChange={(value) => handleUpdateProject({ installationReadiness: value })}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select readiness status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Ready">Ready</SelectItem>
-                            <SelectItem value="Pending Permits">Pending Permits</SelectItem>
-                            <SelectItem value="Requires Preparation">Requires Preparation</SelectItem>
-                            <SelectItem value="Not Ready">Not Ready</SelectItem>
-                          </SelectContent>
-                        </Select>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Project Code</Label>
+                          <Input 
+                          value={selectedProject.projectSnapshot?.projectCode || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), projectCode: e.target.value }
+                          })}
+                          className="text-sm"
+                          />
                       </div>
-                      <div className="space-y-2">
-                        <Label>Estimated Duration</Label>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Customer Name</Label>
                         <Input 
-                          value={editingProject.estimatedDuration || ""}
-                          onChange={(e) => handleUpdateProject({ estimatedDuration: e.target.value })}
-                          placeholder="e.g., 6-8 hours"
+                          value={selectedProject.projectSnapshot?.customerName || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), customerName: e.target.value }
+                          })}
+                          className="text-sm"
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label>Technician</Label>
-                        <Input 
-                          value={editingProject.technician || ""}
-                          onChange={(e) => handleUpdateProject({ technician: e.target.value })}
-                          placeholder="Assessment technician name"
-                          readOnly
-                          className="bg-gray-50"
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Customer Email</Label>
+                        <Input
+                          type="email"
+                          value={selectedProject.projectSnapshot?.customerEmail || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), customerEmail: e.target.value }
+                          })}
+                          className="text-sm"
                         />
                       </div>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Customer Contact</Label>
+                        <Input 
+                          value={selectedProject.projectSnapshot?.customerPhone || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), customerPhone: e.target.value }
+                          })}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1 col-span-2">
+                        <Label className="text-gray-500 text-xs">Customer Address</Label>
+                        <Input 
+                          value={selectedProject.projectSnapshot?.customerAddress || selectedProject.projectSnapshot?.location || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), customerAddress: e.target.value, location: e.target.value }
+                          })}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Client Type</Label>
+                        <Input 
+                          value={selectedProject.projectSnapshot?.clientType || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), clientType: e.target.value }
+                          })}
+                          className="text-sm"
+                        />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Special Requirements</Label>
-                      <Textarea 
-                        value={editingProject.specialRequirements || ""}
-                        onChange={(e) => handleUpdateProject({ specialRequirements: e.target.value })}
-                        placeholder="Enter any special requirements for installation..."
-                        rows={2}
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Price (AUD)</Label>
+                        <Input
+                          value={selectedProject.projectSnapshot?.price || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), price: e.target.value }
+                          })}
+                          className="text-sm"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Technician Notes</Label>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Start Date</Label>
+                      <Input
+                        type="date"
+                          value={selectedProject.projectSnapshot?.startDate || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), startDate: e.target.value }
+                          })}
+                          className="text-sm"
+                      />
+                    </div>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">System Type</Label>
+                        <Input 
+                          value={selectedProject.projectSnapshot?.systemType || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), systemType: e.target.value }
+                          })}
+                          className="text-sm"
+                        />
+                  </div>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Lead ID</Label>
+                        <Input
+                          value={selectedProject.projectSnapshot?.leadId || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), leadId: e.target.value }
+                          })}
+                          className="text-sm"
+                        />
+                </div>
+                      <div className="space-y-1">
+                        <Label className="text-gray-500 text-xs">Project Status</Label>
+                        <Input
+                          value={selectedProject.projectSnapshot?.status || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), status: e.target.value }
+                          })}
+                          className="text-sm"
+                        />
+                            </div>
+                      <div className="space-y-1 col-span-2">
+                        <Label className="text-gray-500 text-xs">Notes</Label>
                       <Textarea 
-                        value={editingProject.technicianNotes || ""}
-                        onChange={(e) => handleUpdateProject({ technicianNotes: e.target.value })}
-                        placeholder="Notes from on-field assessment..."
+                          value={selectedProject.projectSnapshot?.notes || ''}
+                          onChange={(e) => setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...(selectedProject.projectSnapshot || {}), notes: e.target.value }
+                          })}
+                          className="text-sm"
                         rows={3}
-                        readOnly
-                        className="bg-gray-50"
                       />
+                          </div>
                     </div>
                   </div>
                 )}
 
                 {/* System Information */}
-                {selectedSystemType && (
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold">System Information</h3>
-                    <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label>System Size (kW)</Label>
+                    <Label className="text-gray-700 font-medium">System Information</Label>
+                    <div className="grid grid-cols-2 gap-4 pl-4">
+                      {(() => {
+                        const systemInfo = selectedProject.projectSnapshot?.systemInfo || selectedProject.projectDetails?.systemInfo || {};
+                        const systemType = selectedProject.projectDetails?.systemType || selectedProject.projectSnapshot?.systemType || '';
+                        const hasPV = ["Only PV","PV+Battery","PV+Battery+EV Charger","PV+EV Charger"].includes(systemType);
+                        const hasBattery = ["Only Battery","PV+Battery","PV+Battery+EV Charger","Battery+EV Charger"].includes(systemType);
+                        const hasEVCharger = ["Only EV Charger","PV+EV Charger","PV+Battery+EV Charger","Battery+EV Charger"].includes(systemType);
+                        
+                        const updateSystemInfo = (field: string, value: string) => {
+                          const newSystemInfo = { ...systemInfo, [field]: value };
+                          if (selectedProject.projectSnapshot?.systemInfo) {
+                            setSelectedProject({
+                              ...selectedProject,
+                              projectSnapshot: { ...selectedProject.projectSnapshot, systemInfo: newSystemInfo }
+                            });
+                          } else if (selectedProject.projectDetails?.systemInfo) {
+                            setSelectedProject({
+                              ...selectedProject,
+                              projectDetails: { ...selectedProject.projectDetails, systemInfo: newSystemInfo }
+                            });
+                          } else {
+                            setSelectedProject({
+                              ...selectedProject,
+                              projectDetails: { ...(selectedProject.projectDetails || {}), systemInfo: newSystemInfo }
+                            });
+                          }
+                        };
+                        return (
+                          <>
+                            {/* PV fields - only show if system type includes PV */}
+                            {hasPV && (
+                              <>
+                                <div className="space-y-1">
+                                  <Label className="text-gray-500 text-xs">System Size (kW)</Label>
                         <Input 
-                          value={editingProject.systemSize || ""}
-                          onChange={(e) => handleUpdateProject({ systemSize: e.target.value })}
-                          placeholder="e.g., 6.6"
+                                    value={systemInfo.systemSize || ''}
+                                    onChange={(e) => updateSystemInfo('systemSize', e.target.value)}
+                                    className="text-sm"
                         />
                       </div>
-                      {(selectedSystemType.includes('pv') || selectedSystemType.includes('battery')) && (
-                        <div className="space-y-2">
-                          <Label>Inverter Size (kW)</Label>
+                                <div className="space-y-1">
+                                  <Label className="text-gray-500 text-xs">Inverter Size (kW)</Label>
                           <Input 
-                            value={editingProject.inverterSize || ""}
-                            onChange={(e) => handleUpdateProject({ inverterSize: e.target.value })}
-                            placeholder="e.g., 5.0"
+                                    value={systemInfo.inverterSize || ''}
+                                    onChange={(e) => updateSystemInfo('inverterSize', e.target.value)}
+                                    className="text-sm"
                           />
                         </div>
-                      )}
-                      {selectedSystemType.includes('battery') && (
-                        <div className="space-y-2">
-                          <Label>Battery Size (kWh)</Label>
+                                <div className="space-y-1">
+                                  <Label className="text-gray-500 text-xs">Inverter Brand</Label>
                           <Input 
-                            value={editingProject.batterySize || ""}
-                            onChange={(e) => handleUpdateProject({ batterySize: e.target.value })}
-                            placeholder="e.g., 10.0"
+                                    value={systemInfo.inverterBrand || ''}
+                                    onChange={(e) => updateSystemInfo('inverterBrand', e.target.value)}
+                                    className="text-sm"
                           />
                         </div>
-                      )}
+                                <div className="space-y-1">
+                                  <Label className="text-gray-500 text-xs">Inverter Type</Label>
+                                  <Input
+                                    value={systemInfo.inverterType || ''}
+                                    onChange={(e) => updateSystemInfo('inverterType', e.target.value)}
+                                    className="text-sm"
+                                  />
+                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-gray-500 text-xs">Panel Brand</Label>
+                                  <Input
+                                    value={systemInfo.panelBrand || ''}
+                                    onChange={(e) => updateSystemInfo('panelBrand', e.target.value)}
+                                    className="text-sm"
+                                  />
+                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-gray-500 text-xs">Panel Module (Watts)</Label>
+                                  <Input
+                                    value={systemInfo.panelModuleWatts || ''}
+                                    onChange={(e) => updateSystemInfo('panelModuleWatts', e.target.value)}
+                                    className="text-sm"
+                                  />
+            </div>
+                              </>
+                            )}
+                            
+                            {/* Battery fields - only show if system type includes Battery */}
+                            {hasBattery && (
+                              <>
+                                <div className="space-y-1">
+                                  <Label className="text-gray-500 text-xs">Battery Size (kWh)</Label>
+                                  <Input
+                                    value={systemInfo.batterySize || ''}
+                                    onChange={(e) => updateSystemInfo('batterySize', e.target.value)}
+                                    className="text-sm"
+                                  />
                     </div>
+                                <div className="space-y-1">
+                                  <Label className="text-gray-500 text-xs">Battery Brand</Label>
+                                  <Input
+                                    value={systemInfo.batteryBrand || ''}
+                                    onChange={(e) => updateSystemInfo('batteryBrand', e.target.value)}
+                                    className="text-sm"
+                                  />
+                  </div>
+                                <div className="space-y-1">
+                                  <Label className="text-gray-500 text-xs">Battery Model</Label>
+                                  <Input
+                                    value={systemInfo.batteryModel || ''}
+                                    onChange={(e) => updateSystemInfo('batteryModel', e.target.value)}
+                                    className="text-sm"
+                                  />
+                    </div>
+                              </>
+                            )}
+                            
+                            {/* EV Charger fields - only show if system type includes EV Charger */}
+                            {hasEVCharger && (
+                              <>
+                                <div className="space-y-1">
+                                  <Label className="text-gray-500 text-xs">EV Charger Brand</Label>
+                      <Input
+                                    value={systemInfo.evChargerBrand || ''}
+                                    onChange={(e) => updateSystemInfo('evChargerBrand', e.target.value)}
+                                    className="text-sm"
+                      />
+                    </div>
+                                <div className="space-y-1">
+                                  <Label className="text-gray-500 text-xs">EV Charger Model</Label>
+                      <Input
+                                    value={systemInfo.evChargerModel || ''}
+                                    onChange={(e) => updateSystemInfo('evChargerModel', e.target.value)}
+                                    className="text-sm"
+                      />
+                    </div>
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
+                  </div>
+                </div>
+
+                  {/* Property Information */}
+                    <div className="space-y-2">
+                    <Label className="text-gray-700 font-medium">Property Information</Label>
+                    <div className="grid grid-cols-2 gap-4 pl-4">
+                      {(() => {
+                        const propertyInfo = selectedProject.projectSnapshot?.propertyInfo || selectedProject.projectDetails?.propertyInfo || {};
+                        const updatePropertyInfo = (field: string, value: string) => {
+                          const newPropertyInfo = { ...propertyInfo, [field]: value };
+                          if (selectedProject.projectSnapshot?.propertyInfo) {
+                            setSelectedProject({
+                              ...selectedProject,
+                              projectSnapshot: { ...selectedProject.projectSnapshot, propertyInfo: newPropertyInfo }
+                            });
+                          } else if (selectedProject.projectDetails?.propertyInfo) {
+                            setSelectedProject({
+                              ...selectedProject,
+                              projectDetails: { ...selectedProject.projectDetails, propertyInfo: newPropertyInfo }
+                            });
+                          } else {
+                            setSelectedProject({
+                              ...selectedProject,
+                              projectDetails: { ...(selectedProject.projectDetails || {}), propertyInfo: newPropertyInfo }
+                            });
+                          }
+                        };
+                        return (
+                          <>
+                            <div className="space-y-1">
+                              <Label className="text-gray-500 text-xs">House Storey</Label>
+                              <Input
+                                value={propertyInfo.houseStorey || propertyInfo.houseStoreyOther || ''}
+                                onChange={(e) => updatePropertyInfo('houseStorey', e.target.value)}
+                                className="text-sm"
+                      />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-gray-500 text-xs">Roof Type</Label>
+                              <Input
+                                value={propertyInfo.roofType || propertyInfo.roofTypeOther || ''}
+                                onChange={(e) => updatePropertyInfo('roofType', e.target.value)}
+                                className="text-sm"
+                              />
+                          </div>
+                            <div className="space-y-1">
+                              <Label className="text-gray-500 text-xs">Access to 2nd Storey</Label>
+                              <Input
+                                value={propertyInfo.accessTo2ndStorey || propertyInfo.accessSecondStorey || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updatePropertyInfo('accessTo2ndStorey', val);
+                                  updatePropertyInfo('accessSecondStorey', val);
+                                }}
+                                className="text-sm"
+                              />
+                        </div>
+                            <div className="space-y-1">
+                              <Label className="text-gray-500 text-xs">Access to Inverter</Label>
+                              <Input
+                                value={propertyInfo.accessToInverter || propertyInfo.accessInverter || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updatePropertyInfo('accessToInverter', val);
+                                  updatePropertyInfo('accessInverter', val);
+                                }}
+                                className="text-sm"
+                              />
+            </div>
+                            <div className="space-y-1">
+                              <Label className="text-gray-500 text-xs">Meter Phase</Label>
+                              <Input
+                                value={propertyInfo.meterPhase || ''}
+                                onChange={(e) => updatePropertyInfo('meterPhase', e.target.value)}
+                                className="text-sm"
+                              />
+                    </div>
+                          </>
+                        );
+                      })()}
+                  </div>
+                  </div>
+
+                  {/* Project Notes */}
+                    <div className="space-y-2">
+                    <Label className="text-gray-700 font-medium">Project Notes</Label>
+                      <Textarea
+                      value={selectedProject.projectDetails?.projectNotes || selectedProject.projectSnapshot?.notes || ''}
+                      onChange={(e) => {
+                        const notes = e.target.value;
+                        if (selectedProject.projectSnapshot?.notes !== undefined) {
+                          setSelectedProject({
+                            ...selectedProject,
+                            projectSnapshot: { ...selectedProject.projectSnapshot, notes }
+                          });
+                        } else if (selectedProject.projectDetails) {
+                          setSelectedProject({
+                            ...selectedProject,
+                            projectDetails: { ...selectedProject.projectDetails, projectNotes: notes }
+                          });
+                        } else {
+                          setSelectedProject({
+                            ...selectedProject,
+                            projectDetails: { projectNotes: notes }
+                          });
+                        }
+                      }}
+                      className="text-sm"
+                      rows={4}
+                      placeholder="Enter project notes..."
+                  />
+                  </div>
+                </div>
+
+                {/* Sales Site Visit Section */}
+                {selectedProject.siteVisit && (
+                    <div className="pt-4 border-t space-y-4">
+                      <h4 className="font-semibold text-lg text-gray-900">Sales Site Visit Information</h4>
+              <div className="grid grid-cols-2 gap-4">
+                        {selectedProject.siteVisit.dateOfVisit && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Date of Visit</Label>
+                            <p className="font-semibold">{selectedProject.siteVisit.dateOfVisit}</p>
+                </div>
+                        )}
+                        {selectedProject.siteVisit.salesPersonName && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Sales Person</Label>
+                            <p className="font-semibold">{selectedProject.siteVisit.salesPersonName}</p>
+            </div>
+          )}
+                        {selectedProject.siteVisit.currentEnergyProvider && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Energy Retailer</Label>
+                            <p className="font-semibold">{selectedProject.siteVisit.currentEnergyProvider}</p>
+                    </div>
+                      )}
+                        {selectedProject.siteVisit.averageMonthlyBill && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Average Monthly Bill</Label>
+                            <p className="font-semibold">{selectedProject.siteVisit.averageMonthlyBill}</p>
+                    </div>
+                        )}
+                        {selectedProject.siteVisit.roofOrientation && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Roof Orientation</Label>
+                            <p className="font-semibold">{selectedProject.siteVisit.roofOrientation}</p>
+                    </div>
+                )}
+                        {selectedProject.siteVisit.shadingAssessment && Array.isArray(selectedProject.siteVisit.shadingAssessment) && selectedProject.siteVisit.shadingAssessment.length > 0 && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Shading Assessment</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedProject.siteVisit.shadingAssessment.map((item: string, idx: number) => (
+                                <Badge key={idx} variant="outline">{item}</Badge>
+                              ))}
+                    </div>
+                  </div>
+                        )}
+                        {selectedProject.siteVisit.existingSolarInstallations && (
+                <div className="space-y-1">
+                            <Label className="text-gray-500">Existing Solar Installations</Label>
+                            <p className="font-semibold">{selectedProject.siteVisit.existingSolarInstallations}</p>
+                    </div>
+                        )}
+                        {selectedProject.siteVisit.primaryMotivation && Array.isArray(selectedProject.siteVisit.primaryMotivation) && selectedProject.siteVisit.primaryMotivation.length > 0 && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Primary Motivation</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedProject.siteVisit.primaryMotivation.map((item: string, idx: number) => (
+                                <Badge key={idx} variant="outline">{item}</Badge>
+                              ))}
+                    </div>
+                    </div>
+          )}
+                        {selectedProject.siteVisit.interestLevel && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Interest Level</Label>
+                            <p className="font-semibold">{selectedProject.siteVisit.interestLevel}</p>
+                    </div>
+                        )}
+                        {selectedProject.siteVisit.siteNotes && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500">Site Notes</Label>
+                            <p className="text-sm text-gray-700">{selectedProject.siteVisit.siteNotes || '-'}</p>
+                  </div>
+                    )}
+                        {selectedProject.siteVisit.specialRequirements && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500">Special Requirements</Label>
+                            <p className="text-sm text-gray-700">{selectedProject.siteVisit.specialRequirements || '-'}</p>
+            </div>
+                        )}
+                        {selectedProject.siteVisit.nextSteps && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500">Next Steps</Label>
+                            <p className="text-sm text-gray-700">{selectedProject.siteVisit.nextSteps || '-'}</p>
+                    </div>
+                        )}
+                        {selectedProject.siteVisit.electricianVisitDate && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Electrician Visit Date</Label>
+                            <p className="font-semibold">{selectedProject.siteVisit.electricianVisitDate}</p>
+                  </div>
+                        )}
+                        {selectedProject.siteVisit.electricianVisitTime && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Electrician Visit Time</Label>
+                            <p className="font-semibold">{selectedProject.siteVisit.electricianVisitTime}</p>
+                    </div>
+                        )}
+                        {selectedProject.siteVisit.electricianNotes && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500">Notes for Electrician</Label>
+                            <p className="text-sm text-gray-700">{selectedProject.siteVisit.electricianNotes || '-'}</p>
+                  </div>
+                        )}
+                </div>
+          </div>
+                  )}
+
+                {/* On-Field Assessment Section */}
+                {selectedProject.onFieldAssessment && (
+                    <div className="pt-4 border-t space-y-4">
+                      <h4 className="font-semibold text-lg text-gray-900">On-Field Assessment</h4>
+              <div className="grid grid-cols-2 gap-4">
+                        {selectedProject.onFieldAssessment.visitDate && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Visit Date</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.visitDate}</p>
+                </div>
+                        )}
+                        {selectedProject.onFieldAssessment.visitTime && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Visit Time</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.visitTime}</p>
+                </div>
+                        )}
+                        {selectedProject.onFieldAssessment.technicianName && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Technician</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.technicianName}</p>
+                </div>
+                        )}
+                        {selectedProject.onFieldAssessment.weatherConditions && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Weather</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.weatherConditions}</p>
+                </div>
+                        )}
+                        {selectedProject.onFieldAssessment.electricalHazards && Array.isArray(selectedProject.onFieldAssessment.electricalHazards) && selectedProject.onFieldAssessment.electricalHazards.length > 0 && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Electrical Hazards</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedProject.onFieldAssessment.electricalHazards.map((item: string, idx: number) => (
+                                <Badge key={idx} variant="outline" className="bg-red-50">{item}</Badge>
+                              ))}
+              </div>
+                </div>
+                        )}
+                        {selectedProject.onFieldAssessment.panelCondition && (
+                <div className="space-y-1">
+                            <Label className="text-gray-500">Panel Condition</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.panelCondition}</p>
+              </div>
+                        )}
+                        {selectedProject.onFieldAssessment.mainPanelLocation && (
+                <div className="space-y-1">
+                            <Label className="text-gray-500">Main Panel Location</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.mainPanelLocation}</p>
+                </div>
+          )}
+                        {selectedProject.onFieldAssessment.availableAmperage && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Available Amperage</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.availableAmperage}</p>
+              </div>
+          )}
+                        {selectedProject.onFieldAssessment.groundingSystem && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Grounding System</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.groundingSystem}</p>
+            </div>
+          )}
+                        {selectedProject.onFieldAssessment.roofCondition && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Roof Condition</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.roofCondition || '-'}</p>
+                  </div>
+                        )}
+                        {selectedProject.onFieldAssessment.structuralIntegrity && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Structural Integrity</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.structuralIntegrity || '-'}</p>
+                  </div>
+                        )}
+                        {selectedProject.onFieldAssessment.roofHazards && Array.isArray(selectedProject.onFieldAssessment.roofHazards) && selectedProject.onFieldAssessment.roofHazards.length > 0 && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Roof Hazards</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedProject.onFieldAssessment.roofHazards.map((item: string, idx: number) => (
+                                <Badge key={idx} variant="outline" className="bg-orange-50">{item}</Badge>
+                              ))}
+                </div>
+              </div>
+                        )}
+                        {selectedProject.onFieldAssessment.panelCount && (
+                <div className="space-y-1">
+                            <Label className="text-gray-500">Panel Count</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.panelCount}</p>
+                  </div>
+                        )}
+                        {selectedProject.onFieldAssessment.conduitPath && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Conduit Path</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.conduitPath}</p>
+                  </div>
+                        )}
+                        {selectedProject.onFieldAssessment.electricalNotes && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500">Electrical Notes</Label>
+                            <p className="text-sm text-gray-700">{selectedProject.onFieldAssessment.electricalNotes || '-'}</p>
+                </div>
+          )}
+                        {selectedProject.onFieldAssessment.roofAccess && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Roof Access</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.roofAccess || '-'}</p>
+              </div>
+                        )}
+                        {selectedProject.onFieldAssessment.mountingPoints && Array.isArray(selectedProject.onFieldAssessment.mountingPoints) && selectedProject.onFieldAssessment.mountingPoints.length > 0 && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Mounting Points</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedProject.onFieldAssessment.mountingPoints.map((item: string, idx: number) => (
+                                <Badge key={idx} variant="outline">{item}</Badge>
+                              ))}
+                  </div>
+                  </div>
+                        )}
+                        {selectedProject.onFieldAssessment.roofNotes && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500">Roof Notes</Label>
+                            <p className="text-sm text-gray-700">{selectedProject.onFieldAssessment.roofNotes || '-'}</p>
+                </div>
+                        )}
+                        {selectedProject.onFieldAssessment.inverterLocation && (
+                          <div className="space-y-1">
+                            <Label className="text-gray-500">Inverter Location</Label>
+                            <p className="font-semibold">{selectedProject.onFieldAssessment.inverterLocation}</p>
+              </div>
+                        )}
+                        {selectedProject.onFieldAssessment.specialRequirements && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500">Special Requirements</Label>
+                            <p className="text-sm text-gray-700">{selectedProject.onFieldAssessment.specialRequirements || '-'}</p>
+                      </div>
+                        )}
+                        {selectedProject.onFieldAssessment.safetyHazards && Array.isArray(selectedProject.onFieldAssessment.safetyHazards) && selectedProject.onFieldAssessment.safetyHazards.length > 0 && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500">Safety Hazards</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedProject.onFieldAssessment.safetyHazards.map((item: string, idx: number) => (
+                                <Badge key={idx} variant="outline" className="bg-yellow-50">{item}</Badge>
+                              ))}
+                    </div>
+                  </div>
+                        )}
+                        {selectedProject.onFieldAssessment.generalNotes && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500">General Notes</Label>
+                            <p className="text-sm text-gray-700">{selectedProject.onFieldAssessment.generalNotes}</p>
+                </div>
+                        )}
+                        {selectedProject.onFieldAssessment.recommendations && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500">Recommendations</Label>
+                            <p className="text-sm text-gray-700">{selectedProject.onFieldAssessment.recommendations}</p>
+                      </div>
+                        )}
+                        {selectedProject.onFieldAssessment.nextSteps && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500">Next Steps</Label>
+                            <p className="text-sm text-gray-700">{selectedProject.onFieldAssessment.nextSteps}</p>
+                    </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+              {/* Installation Day Details - Only show for completed installations */}
+              {(selectedProject.status === "installation-completed" || selectedProject.status === "retailer-installation-completed") && installationData && (
+                <div className="pt-4 border-t space-y-4">
+                  <h4 className="font-semibold text-lg text-gray-900">Installation Day Details</h4>
+                  
+                  {/* Installation Checklist */}
+                  {installationData.checklist && installationData.checklist.length > 0 && (
+                <div className="space-y-2">
+                      <Label className="text-gray-700 font-medium">Installation Checklist</Label>
+                      <div className="space-y-2 pl-4">
+                        {installationData.checklist.map((item) => (
+                          <div key={item.id} className="flex items-start gap-2">
+                            <span className={item.checked ? "text-green-600" : "text-gray-400"}>
+                              {item.checked ? "✓" : "○"}
+                            </span>
+                            <div className="flex-1">
+                              <p className="text-sm text-gray-700">
+                                <span className="font-medium">{item.category}:</span> {item.item}
+                              </p>
+                              {installationData.checklistNotes[item.id] && (
+                                <p className="text-xs text-gray-500 mt-1 pl-4 italic">
+                                  Note: {installationData.checklistNotes[item.id]}
+                                </p>
+                              )}
+                </div>
+              </div>
+                        ))}
+              </div>
+            </div>
+          )}
+                  
+                  {/* Expenses */}
+                  {installationData.expenses && installationData.expenses.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-gray-700 font-medium">Expenses</Label>
+                      <div className="space-y-2 pl-4">
+                        {installationData.expenses.map((expense) => (
+                          <div key={expense.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                <div>
+                              <p className="text-sm font-medium">{expense.item || expense.description}</p>
+                              {expense.employeeName && (
+                                <p className="text-xs text-gray-500">
+                                  {expense.employeeName}
+                                  {expense.employeeEmail && ` (${expense.employeeEmail})`}
+                                </p>
+                              )}
+                </div>
+                            <p className="text-sm font-semibold">${expense.amount.toFixed(2)}</p>
+                </div>
+                        ))}
+                        <div className="pt-2 border-t">
+                          <p className="text-sm font-semibold">
+                            Total: ${installationData.expenses.reduce((sum, e) => sum + e.amount, 0).toFixed(2)}
+                          </p>
+                </div>
+                </div>
+              </div>
+                  )}
+                  
+                  {/* Breaks */}
+                  {installationData.breaks && installationData.breaks.length > 0 && (
+              <div className="space-y-2">
+                      <Label className="text-gray-700 font-medium">Breaks</Label>
+                      <div className="space-y-2 pl-4">
+                        {installationData.breaks.map((breakItem) => (
+                          <div key={breakItem.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                            <p className="text-sm font-medium">{breakItem.type}</p>
+                            <p className="text-xs text-gray-600">
+                              {breakItem.startTime} - {breakItem.endTime}
+                            </p>
+                </div>
+                        ))}
+              </div>
+            </div>
+          )}
+                  
+                  {/* Customer Notes */}
+                  {installationData.customerNotes && (
+                    <div className="space-y-2">
+                      <Label className="text-gray-700 font-medium">Customer Notes</Label>
+                      <p className="text-sm text-gray-700 pl-4 whitespace-pre-wrap">{installationData.customerNotes}</p>
+              </div>
+                  )}
+                  
+                  {/* Job Status */}
+                  {installationData.jobStatus && installationData.jobStatus.jobStarted && installationData.jobStatus.jobStartTime && (
+                    <div className="space-y-2">
+                      <Label className="text-gray-700 font-medium">Job Time</Label>
+                      <div className="pl-4 space-y-1">
+                        <p className="text-sm text-gray-700">
+                          Started: {new Date(installationData.jobStatus.jobStartTime).toLocaleString()}
+                        </p>
+                        {installationData.jobStatus.totalPausedDuration > 0 && (
+                          <p className="text-sm text-gray-700">
+                            Total Paused: {Math.floor(installationData.jobStatus.totalPausedDuration / 60000)} minutes
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Photo Documentation */}
+                  {installationData.photos && installationData.photos.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-gray-700 font-medium">Photo Documentation</Label>
+                      <div className="grid grid-cols-2 gap-4 pl-4">
+                        {installationData.photos.map((photo) => (
+                          <div key={photo.id} className="space-y-2">
+                            <div className="aspect-video bg-gray-100 border-2 border-gray-300 rounded-lg overflow-hidden relative">
+                              {photo.imageData ? (
+                                <img 
+                                  src={photo.imageData} 
+                                  alt={photo.title} 
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50">
+                                  <span className="text-xs text-gray-400">No photo</span>
+                      </div>
+                              )}
+                    </div>
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium text-gray-900">{photo.title}</p>
+                              {photo.description && (
+                                <p className="text-xs text-gray-600">{photo.description}</p>
+                              )}
+                              <div className="flex items-center justify-between">
+                                <p className="text-xs text-gray-500">{photo.timestamp}</p>
+                                <span className={`text-xs px-2 py-0.5 rounded ${
+                                  photo.status === "Completed" 
+                                    ? "bg-green-100 text-green-700" 
+                                    : photo.status === "In Progress"
+                                    ? "bg-yellow-100 text-yellow-700"
+                                    : "bg-gray-100 text-gray-700"
+                                }`}>
+                                  {photo.status}
+                                </span>
+                      </div>
+                    </div>
+                  </div>
+                        ))}
+                </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Status Change */}
+              <div className="space-y-2 pt-4 border-t">
+                <Label>Change Status</Label>
+                <Select 
+                  value={selectedProject.status}
+                  onValueChange={(value) => handleStatusChange(selectedProject.id, value as ProjectStatus)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(() => {
+                      // Determine which columns to show based on project's current board
+                      const isRetailerProject = selectedProject.status.startsWith("retailer-") || 
+                                                ["site-inspection", "stage-one", "stage-two", "full-system", "canceled"].includes(selectedProject.status);
+                      const columnsToShow = isRetailerProject ? retailerColumns : inHouseColumns;
+                      
+                      return columnsToShow.map((col) => (
+                        <SelectItem key={col.id} value={col.id}>
+                          {col.title}
+                        </SelectItem>
+                      ));
+                    })()}
+                  </SelectContent>
+                </Select>
+                      </div>
+
+              {/* Assignees Section */}
+              <div className="pt-4 border-t space-y-2">
+                <Label className="text-gray-700 font-medium">Assignees</Label>
+                <ResourceMultiSelect
+                  label=""
+                  value={selectedAssignees}
+                  onChange={handleAssigneeChange}
+                  placeholder="Select assignees..."
+                  options={resources.map(r => r.name)}
+                    />
+                    </div>
+                    
+              {/* Comments Section */}
+              <div className="pt-4 border-t space-y-4">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-gray-600" />
+                  <Label className="text-gray-700 font-medium text-lg">Comments</Label>
+                    </div>
+                    
+                {/* Existing Comments */}
+                {selectedProject.comments && selectedProject.comments.length > 0 && (
+                  <div className="space-y-3 max-h-60 overflow-y-auto">
+                    {selectedProject.comments.map((comment) => (
+                      <div key={comment.id} className="bg-gray-50 rounded-lg p-3 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold text-sm text-gray-900">{comment.author}</p>
+                          <p className="text-xs text-gray-500">{comment.date} at {comment.time}</p>
+                      </div>
+                        <p className="text-sm text-gray-700">{comment.text}</p>
+                    </div>
+                    ))}
                   </div>
                 )}
 
-                {/* Project Timeline */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Project Timeline</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Start Date</Label>
-                      <Input
-                        type="date"
-                        value={editingProject.startDate || ""}
-                        onChange={(e) => handleUpdateProject({ startDate: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>End Date</Label>
-                      <Input
-                        type="date"
-                        value={editingProject.endDate || ""}
-                        onChange={(e) => handleUpdateProject({ endDate: e.target.value })}
-                      />
-                    </div>
-                  </div>
+                {/* Add Comment Form */}
+                <div className="space-y-2">
+                  <Textarea 
+                    placeholder="Add a comment..."
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    rows={3}
+                    className="resize-none"
+                  />
+                  <Button
+                    onClick={handleAddComment}
+                    disabled={!newComment.trim()}
+                    size="sm"
+                    className="w-full"
+                  >
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                    Add Comment
+                </Button>
                 </div>
-
-
-                {/* Comments Section */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Comments</h3>
-                  
-                  {/* Display existing comments */}
-                  <div className="space-y-3 max-h-60 overflow-y-auto">
-                    {editingProject.comments && editingProject.comments.length > 0 ? (
-                      editingProject.comments.map((comment) => (
-                        <div key={comment.id} className="border rounded-lg p-3 bg-muted/50">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm">{comment.author}</span>
-                              <span className="text-xs text-muted-foreground">({comment.email})</span>
-                            </div>
-                            <span className="text-xs text-muted-foreground">{comment.timestamp}</span>
-                          </div>
-                          <p className="text-sm">{comment.text}</p>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No comments yet.</p>
-                    )}
-                  </div>
-
-                  {/* Add new comment */}
-                  <div className="space-y-3 border-t pt-4">
-                    <div className="space-y-2">
-                      <Label>Add Comment</Label>
-                      <Textarea
-                        placeholder="Write your comment here..."
-                        value={commentText}
-                        onChange={(e) => setCommentText(e.target.value)}
-                        rows={3}
-                      />
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Commenting as: {userEmail}
-                    </div>
-                    <Button 
-                      onClick={handleSubmitComment}
-                      disabled={!commentText.trim()}
-                      size="sm"
-                      className="w-full"
-                    >
-                      <MessageSquare className="w-4 h-4 mr-2" />
-                      Add Comment
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-3 pt-4 border-t">
-                  <Button variant="outline" onClick={() => setShowProjectDetails(false)} className="flex-1">
-                    Close
-                  </Button>
-                  <Button onClick={() => {
-                    alert("Project updated successfully!");
-                    setShowProjectDetails(false);
-                  }} className="flex-1">
-                    <Edit className="w-4 h-4 mr-2" />
-                    Save Changes
-                  </Button>
-                </div>
+              </div>
             </div>
+          )}
+
+          {/* Action Buttons - Always visible at bottom */}
+          <DialogFooter className="flex flex-row gap-2 px-6 py-4 border-t bg-white flex-shrink-0 justify-end w-full sticky bottom-0 z-50">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowProjectDetailsDialog(false);
+                setSelectedProject(null);
+                setSelectedAssignees([]);
+                setNewComment("");
+              }}
+              className="min-w-[100px]"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (selectedProject) {
+                  // Ensure assignees are saved
+                  const updatedProject = {
+                    ...selectedProject,
+                    assignees: selectedAssignees.length > 0 ? selectedAssignees : selectedProject.assignees || [],
+                    assignee: selectedAssignees.length > 0 ? selectedAssignees[0] : selectedProject.assignee || '',
+                  };
+                  
+                  console.log('Saving project with status:', updatedProject.status, 'Job Type:', updatedProject.projectDetails?.additionalInfo?.jobType);
+                  
+                  // Update projects state
+                  const projectsData = projects.map(p => p.id === updatedProject.id ? updatedProject : p);
+                  setProjects(projectsData);
+                  
+                  // Save to both localStorage and Firestore
+                  saveProjectsToStorage(projectsData).then(() => {
+                    console.log('Project saved with status:', updatedProject.status);
+                  });
+                  
+                  // Close dialog and reset state
+                  setShowProjectDetailsDialog(false);
+                  setSelectedProject(null);
+                  setSelectedAssignees([]);
+                  setNewComment("");
+                  alert("Project updated successfully!");
+                }
+              }}
+              className="text-gray-900 border border-gray-300 bg-white hover:bg-teal-600 hover:text-white hover:border-teal-600 min-w-[140px] flex items-center justify-center"
+            >
+              <Save className="w-4 h-4 mr-2" />
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Project Dialog */}
+      <Dialog open={showEditProjectDialog} onOpenChange={setShowEditProjectDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Project</DialogTitle>
+          </DialogHeader>
+          
+          {editingProject && (
+            <>
+              <div className="space-y-4 py-4">
+                {/* Project Name */}
+                  <div className="space-y-2">
+                  <Label htmlFor="edit-name">Project Name *</Label>
+                    <Input 
+                    id="edit-name"
+                    value={editingProject.name}
+                    onChange={(e) => setEditingProject({ ...editingProject, name: e.target.value })}
+                    placeholder="Enter project name"
+                    />
+                  </div>
+
+                {/* Priority and System Size */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-priority">Priority</Label>
+                    <Select
+                      value={editingProject.priority}
+                      onValueChange={(value) => setEditingProject({ ...editingProject, priority: value as Priority })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select priority" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                      </SelectContent>
+                    </Select>
+              </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-systemSize">System Size *</Label>
+                    <Input 
+                      id="edit-systemSize"
+                      value={editingProject.systemSize}
+                      onChange={(e) => setEditingProject({ ...editingProject, systemSize: e.target.value })}
+                      placeholder="e.g., 5kW System"
+                    />
+                  </div>
+                </div>
+                    
+                {/* Type and Cost */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-type">Project Type</Label>
+                    <Select
+                      value={editingProject.type}
+                      onValueChange={(value) => setEditingProject({ ...editingProject, type: value as ProjectType })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Residential">Residential</SelectItem>
+                        <SelectItem value="Commercial">Commercial</SelectItem>
+                        <SelectItem value="Industrial">Industrial</SelectItem>
+                      </SelectContent>
+                    </Select>
+              </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-cost">Cost *</Label>
+                    <Input 
+                      id="edit-cost"
+                      value={editingProject.cost}
+                      onChange={(e) => setEditingProject({ ...editingProject, cost: e.target.value })}
+                      placeholder="e.g., $8,500"
+                    />
+                  </div>
+              </div>
+
+                {/* Dates */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-startDate">Start Date</Label>
+                    <Input 
+                      id="edit-startDate"
+                      value={editingProject.startDate}
+                      onChange={(e) => setEditingProject({ ...editingProject, startDate: e.target.value })}
+                      placeholder="e.g., Nov 1"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-endDate">End Date</Label>
+                    <Input 
+                      id="edit-endDate"
+                      value={editingProject.endDate}
+                      onChange={(e) => setEditingProject({ ...editingProject, endDate: e.target.value })}
+                      placeholder="e.g., Nov 3"
+                    />
+                </div>
+              </div>
+
+                {/* Assignee and Status */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-assignee">Assignee</Label>
+                    <Input 
+                      id="edit-assignee"
+                      value={editingProject.assignee}
+                      onChange={(e) => setEditingProject({ ...editingProject, assignee: e.target.value })}
+                      placeholder="e.g., TA, TB"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-status">Status</Label>
+                    <Select 
+                      value={editingProject.status}
+                      onValueChange={(value) => setEditingProject({ ...editingProject, status: value as ProjectStatus })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[...inHouseColumns, ...retailerColumns].map((col) => (
+                          <SelectItem key={col.id} value={col.id}>
+                            {col.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => {
+                  setShowEditProjectDialog(false);
+                  setEditingProject(null);
+                }}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSaveEdit} className="bg-teal-600 hover:bg-teal-700">
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Changes
+                </Button>
+              </DialogFooter>
+            </>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Stats Dialog */}
-      <Dialog open={showStatsDialog} onOpenChange={setShowStatsDialog}>
-        <DialogContent className="max-w-4xl">
+      {/* Sync Status Dialog */}
+      <Dialog open={showSyncStatus} onOpenChange={setShowSyncStatus}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5" />
-              Project Statistics
-            </DialogTitle>
+            <DialogTitle>Sync Status - Cross-Device Synchronization</DialogTitle>
+            <DialogDescription>
+              Check if data is syncing properly between India and Australia
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Project Distribution</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span>Not Started</span>
-                      <Badge variant="secondary">2</Badge>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span>In Progress</span>
-                      <Badge variant="default">2</Badge>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span>Inspection</span>
-                      <Badge variant="outline">1</Badge>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span>Completed</span>
-                      <Badge variant="secondary">2</Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Financial Overview</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span>Total Value</span>
-                      <span className="font-semibold">$102,000</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span>Completed Value</span>
-                      <span className="font-semibold text-green-600">$24,700</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span>In Progress Value</span>
-                      <span className="font-semibold text-blue-600">$38,200</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span>Pending Value</span>
-                      <span className="font-semibold text-orange-600">$39,100</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+          <div className="space-y-4">
+            {/* Connection Status */}
+            <div className="p-4 border rounded-lg">
+              <h3 className="font-semibold mb-2">Connection Status</h3>
+              <div className="flex items-center gap-2">
+                {syncStatus.firestoreEnabled ? (
+                  <>
+                    <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-green-600 font-medium">Firebase Connected</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <span className="text-red-600 font-medium">Firebase Not Connected</span>
+                  </>
+                )}
+              </div>
             </div>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Team Performance</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span>Team A</span>
-                    <div className="flex items-center gap-2">
-                      <span>4 projects</span>
-                      <Badge variant="outline">85% efficiency</Badge>
-                    </div>
+
+            {/* Project Counts */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 border rounded-lg">
+                <h3 className="font-semibold mb-2">Local Projects</h3>
+                <p className="text-3xl font-bold text-blue-600">{syncStatus.localProjectCount}</p>
+                <p className="text-sm text-gray-500 mt-1">Projects in this browser</p>
+              </div>
+              <div className="p-4 border rounded-lg">
+                <h3 className="font-semibold mb-2">Firestore Projects</h3>
+                <p className="text-3xl font-bold text-green-600">{syncStatus.firestoreProjectCount}</p>
+                <p className="text-sm text-gray-500 mt-1">Projects in cloud (shared)</p>
+              </div>
+            </div>
+
+            {/* Sync Status */}
+            {syncStatus.firestoreEnabled && (
+              <div className="p-4 border rounded-lg">
+                <h3 className="font-semibold mb-2">Sync Status</h3>
+                {syncStatus.localProjectCount === syncStatus.firestoreProjectCount ? (
+                  <div className="flex items-center gap-2 text-green-600">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span>✅ Projects are in sync</span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span>Team B</span>
-                    <div className="flex items-center gap-2">
-                      <span>3 projects</span>
-                      <Badge variant="outline">92% efficiency</Badge>
-                    </div>
+                ) : syncStatus.localProjectCount < syncStatus.firestoreProjectCount ? (
+                  <div className="flex items-center gap-2 text-orange-600">
+                    <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                    <span>⚠️ {syncStatus.firestoreProjectCount - syncStatus.localProjectCount} project(s) in Firestore but not in local. Click "Refresh Projects" to sync.</span>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                ) : (
+                  <div className="flex items-center gap-2 text-blue-600">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    <span>ℹ️ {syncStatus.localProjectCount - syncStatus.firestoreProjectCount} project(s) in local but not in Firestore. They will be uploaded automatically.</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Last Sync Time */}
+            {syncStatus.lastSyncTime && (
+              <div className="p-4 border rounded-lg">
+                <h3 className="font-semibold mb-2">Last Check</h3>
+                <p className="text-sm text-gray-600">{syncStatus.lastSyncTime}</p>
+                <p className="text-xs text-gray-500 mt-1">{syncStatus.lastSyncEvent}</p>
+              </div>
+            )}
+
+            {/* Recent Changes */}
+            {syncStatus.recentChanges.length > 0 && (
+              <div className="p-4 border rounded-lg">
+                <h3 className="font-semibold mb-2">Sync Details</h3>
+                <ul className="space-y-1 text-sm">
+                  {syncStatus.recentChanges.map((change, index) => (
+                    <li key={index} className="text-gray-600">• {change}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Instructions */}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h3 className="font-semibold mb-2 text-blue-900">How to Verify Sync</h3>
+              <ol className="list-decimal list-inside space-y-1 text-sm text-blue-800">
+                <li>Have your team member in Australia check their sync status</li>
+                <li>Compare the "Firestore Projects" count - it should be the same for both</li>
+                <li>If counts differ, click "Refresh Projects" on both devices</li>
+                <li>Check the "Sync Details" section to see which projects are missing</li>
+                <li>Projects added on one device should appear on the other within 1-2 seconds</li>
+              </ol>
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowStatsDialog(false)}>
-              Close
-            </Button>
-            <Button>
-              <Download className="w-4 h-4 mr-2" />
-              Export Report
-            </Button>
+            <Button variant="outline" onClick={() => setShowSyncStatus(false)}>Close</Button>
+            <Button onClick={() => { checkSyncStatus(); }}>Refresh Status</Button>
+            {firebaseEnabled && db && (
+              <Button onClick={() => { handleManualRefresh(); setShowSyncStatus(false); }}>Sync Now</Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Team Member Dialog */}
-      <Dialog open={showTeamMemberDialog} onOpenChange={setShowTeamMemberDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Team Member Details
-            </DialogTitle>
-          </DialogHeader>
-          {selectedTeamMember && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Name</Label>
-                  <p className="text-lg font-semibold">{selectedTeamMember.name}</p>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Role</Label>
-                  <p className="text-lg">{selectedTeamMember.role}</p>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Availability</Label>
-                  <p className="text-lg font-semibold">{selectedTeamMember.availability}%</p>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Active Projects</Label>
-                  <p className="text-lg">{selectedTeamMember.projects}</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-muted-foreground">Availability Status</Label>
-                <div className="relative h-3 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className={`absolute inset-y-0 left-0 rounded-full ${
-                      selectedTeamMember.availability > 70
-                        ? "bg-success"
-                        : selectedTeamMember.availability > 40
-                        ? "bg-warning"
-                        : "bg-destructive"
-                    }`}
-                    style={{ width: `${selectedTeamMember.availability}%` }}
-                  />
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {selectedTeamMember.availability > 70 ? "High availability" : 
-                   selectedTeamMember.availability > 40 ? "Moderate availability" : "Low availability"}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-muted-foreground">Current Projects</Label>
-                <div className="space-y-1">
-                  <div className="p-2 bg-muted rounded text-sm">Sample Project - In Progress</div>
-                  <div className="p-2 bg-muted rounded text-sm">Sample Project 2 - Scheduled</div>
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowTeamMemberDialog(false)}>
-              Close
-            </Button>
-            <Button onClick={handleEditMember}>
-              <Edit className="w-4 h-4 mr-2" />
-              Edit Member
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Member Dialog */}
-      <Dialog open={showEditMember} onOpenChange={setShowEditMember}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>Edit Team Member</span>
-              <Button variant="ghost" size="sm" onClick={() => setShowEditMember(false)}>
-                <X className="w-4 h-4" />
-              </Button>
-            </DialogTitle>
-          </DialogHeader>
-          
-          {editingMember && (
-            <div className="space-y-6">
-              {/* Basic Information */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Basic Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Name</Label>
-                    <Input 
-                      value={editingMember.name}
-                      onChange={(e) => setEditingMember({ ...editingMember, name: e.target.value })}
-                      placeholder="Enter member name"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Role</Label>
-                    <Select 
-                      value={editingMember.role} 
-                      onValueChange={(value) => setEditingMember({ ...editingMember, role: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Lead Electrician">Lead Electrician</SelectItem>
-                        <SelectItem value="Apprentice">Apprentice</SelectItem>
-                        <SelectItem value="Senior Technician">Senior Technician</SelectItem>
-                        <SelectItem value="Project Manager">Project Manager</SelectItem>
-                        <SelectItem value="Site Supervisor">Site Supervisor</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Availability Information */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Availability</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Availability Percentage</Label>
-                    <Input 
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={editingMember.availability}
-                      onChange={(e) => setEditingMember({ ...editingMember, availability: parseInt(e.target.value) || 0 })}
-                      placeholder="Enter availability percentage"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Active Projects</Label>
-                    <Input 
-                      type="number"
-                      min="0"
-                      value={editingMember.projects}
-                      onChange={(e) => setEditingMember({ ...editingMember, projects: parseInt(e.target.value) || 0 })}
-                      placeholder="Number of active projects"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Contact Information */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Contact Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Email</Label>
-                    <Input 
-                      type="email"
-                      value={editingMember.email || ""}
-                      onChange={(e) => setEditingMember({ ...editingMember, email: e.target.value })}
-                      placeholder="Enter email address"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Phone</Label>
-                    <Input 
-                      type="tel"
-                      value={editingMember.phone || ""}
-                      onChange={(e) => setEditingMember({ ...editingMember, phone: e.target.value })}
-                      placeholder="Enter phone number"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Skills & Certifications */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Skills & Certifications</h3>
-                <div className="space-y-2">
-                  <Label>Skills</Label>
-                  <Textarea 
-                    value={editingMember.skills || ""}
-                    onChange={(e) => setEditingMember({ ...editingMember, skills: e.target.value })}
-                    placeholder="Enter skills and certifications"
-                    rows={3}
-                  />
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <Button variant="outline" onClick={() => setShowEditMember(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveMemberChanges}>
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  Save Changes
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Availability Dialog */}
-      <Dialog open={showAvailabilityDialog} onOpenChange={setShowAvailabilityDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Clock className="w-5 h-5" />
-              Availability Details
-            </DialogTitle>
-          </DialogHeader>
-          {selectedAvailability && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Team Member</Label>
-                  <p className="text-lg font-semibold">{selectedAvailability.member.name}</p>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Day</Label>
-                  <p className="text-lg">{selectedAvailability.day}</p>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Availability</Label>
-                  <p className="text-lg font-semibold">{selectedAvailability.availability}%</p>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Status</Label>
-                  <Badge variant={selectedAvailability.availability > 70 ? 'default' : selectedAvailability.availability > 40 ? 'secondary' : 'destructive'}>
-                    {selectedAvailability.availability > 70 ? 'High' : selectedAvailability.availability > 40 ? 'Moderate' : 'Low'}
-                  </Badge>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-muted-foreground">Scheduled Tasks</Label>
-                <div className="space-y-1">
-                  <div className="p-2 bg-muted rounded text-sm">Morning: Site Survey</div>
-                  <div className="p-2 bg-muted rounded text-sm">Afternoon: Installation Work</div>
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAvailabilityDialog(false)}>
-              Close
-            </Button>
-            <Button>
-              <Edit className="w-4 h-4 mr-2" />
-              Edit Schedule
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Schedule Details Dialog */}
-      <Dialog open={showScheduleDetails} onOpenChange={setShowScheduleDetails}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>Schedule Details</span>
-              <Button variant="ghost" size="sm" onClick={() => setShowScheduleDetails(false)}>
-                <X className="w-4 h-4" />
-              </Button>
-            </DialogTitle>
-          </DialogHeader>
-          
-          {selectedScheduleItem && (
-            <div className="space-y-6">
-              {/* Project Title */}
-              <div className="text-center">
-                <h2 className="text-2xl font-bold text-primary">{selectedScheduleItem.title}</h2>
-              </div>
-
-              {/* Customer Information */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold border-b pb-2">Customer Information</h3>
-                  
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <Users className="w-5 h-5 text-muted-foreground" />
-                      <div>
-                        <p className="font-medium">Customer Name</p>
-                        <p className="text-muted-foreground">{selectedScheduleItem.customerName}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                      <Phone className="w-5 h-5 text-muted-foreground" />
-                      <div>
-                        <p className="font-medium">Phone Number</p>
-                        <p className="text-muted-foreground">{selectedScheduleItem.customerPhone}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-start gap-3">
-                      <MapPin className="w-5 h-5 text-muted-foreground mt-0.5" />
-                      <div>
-                        <p className="font-medium">Address</p>
-                        <p className="text-muted-foreground">{selectedScheduleItem.customerAddress}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold border-b pb-2">Schedule Information</h3>
-                  
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <MapPin className="w-5 h-5 text-muted-foreground" />
-                      <div>
-                        <p className="font-medium">Location</p>
-                        <p className="text-muted-foreground">{selectedScheduleItem.location}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                      <Clock className="w-5 h-5 text-muted-foreground" />
-                      <div>
-                        <p className="font-medium">Time</p>
-                        <p className="text-muted-foreground">{selectedScheduleItem.time}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-start gap-3">
-                      <Users className="w-5 h-5 text-muted-foreground mt-0.5" />
-                      <div>
-                        <p className="font-medium">Team Assigned</p>
-                        <p className="text-muted-foreground">{selectedScheduleItem.teamAssigned}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <Button variant="outline" onClick={() => setShowScheduleDetails(false)}>
-                  Close
-                </Button>
-                <Button onClick={handleEditSchedule}>
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit Schedule
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Schedule Dialog */}
-      <Dialog open={showEditSchedule} onOpenChange={setShowEditSchedule}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>Edit Schedule</span>
-              <Button variant="ghost" size="sm" onClick={() => setShowEditSchedule(false)}>
-                <X className="w-4 h-4" />
-              </Button>
-            </DialogTitle>
-          </DialogHeader>
-          
-          {editingScheduleItem && (
-            <div className="space-y-6">
-              {/* Project Information */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Project Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Project Title</Label>
-                    <Input 
-                      value={editingScheduleItem.title}
-                      onChange={(e) => setEditingScheduleItem({ ...editingScheduleItem, title: e.target.value })}
-                      placeholder="Enter project title"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Location</Label>
-                    <Input 
-                      value={editingScheduleItem.location}
-                      onChange={(e) => setEditingScheduleItem({ ...editingScheduleItem, location: e.target.value })}
-                      placeholder="Enter location"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Customer Information */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Customer Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Customer Name</Label>
-                    <Input 
-                      value={editingScheduleItem.customerName}
-                      onChange={(e) => setEditingScheduleItem({ ...editingScheduleItem, customerName: e.target.value })}
-                      placeholder="Enter customer name"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Phone Number</Label>
-                    <Input 
-                      value={editingScheduleItem.customerPhone}
-                      onChange={(e) => setEditingScheduleItem({ ...editingScheduleItem, customerPhone: e.target.value })}
-                      placeholder="Enter phone number"
-                    />
-                  </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>Address</Label>
-                    <Input 
-                      value={editingScheduleItem.customerAddress}
-                      onChange={(e) => setEditingScheduleItem({ ...editingScheduleItem, customerAddress: e.target.value })}
-                      placeholder="Enter customer address"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Schedule Information */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Schedule Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Time</Label>
-                    <Input 
-                      value={editingScheduleItem.time}
-                      onChange={(e) => setEditingScheduleItem({ ...editingScheduleItem, time: e.target.value })}
-                      placeholder="e.g., 9:00 AM - 3:00 PM"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Team Assigned</Label>
-                    <Select 
-                      value={editingScheduleItem.teamAssigned} 
-                      onValueChange={(value) => setEditingScheduleItem({ ...editingScheduleItem, teamAssigned: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select team" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Team A (John Davis, Mike Thompson)">Team A (John Davis, Mike Thompson)</SelectItem>
-                        <SelectItem value="Team B (Sarah Chen, Tom Wilson)">Team B (Sarah Chen, Tom Wilson)</SelectItem>
-                        <SelectItem value="Team A (John Davis, Mike Thompson, Tom Wilson)">Team A (John Davis, Mike Thompson, Tom Wilson)</SelectItem>
-                        <SelectItem value="Team B (Sarah Chen)">Team B (Sarah Chen)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <Button variant="outline" onClick={() => setShowEditSchedule(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveScheduleChanges}>
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  Save Changes
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
-    );
-  } catch (error) {
-    console.error("Error in ProjectManagementScreen:", error);
-    return (
-      <div className="p-8 text-center">
-        <h1 className="text-2xl font-bold mb-4">Project Management</h1>
-        <p className="text-red-600">There was an error loading the project management page.</p>
-        <p className="text-sm text-gray-600 mt-2">Please check the console for more details.</p>
     </div>
   );
-  }
 }
+

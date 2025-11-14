@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { db, firebaseEnabled } from "../../lib/firebase";
+import { onSnapshot, collection } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -57,8 +59,74 @@ export function ProjectManagementSiteVisitScreen() {
   const [showEditVisitDialog, setShowEditVisitDialog] = useState(false);
   const [editingVisit, setEditingVisit] = useState(null);
 
-  // Mock data for sales site visits
-  const salesSiteVisits = [
+  // Sales site visits (from storage/firestore)
+  const [salesSiteVisits, setSalesSiteVisits] = useState<any[]>([]);
+
+  useEffect(() => {
+    const normalize = (it: any, idx: number) => ({
+      id: it.id || `SV-${idx+1}`,
+      customerName: it.customerName || '',
+      propertyAddress: it.propertyAddress || '',
+      salesPerson: it.salesPersonName || it.salesPersonEmail || '',
+      salesPersonName: it.salesPersonName || '',
+      salesPersonEmail: it.salesPersonEmail || '',
+      visitDate: it.dateOfVisit || it.createdAt?.slice(0,10) || '',
+      status: 'completed',
+      propertyType: (it.propertyType || '').charAt(0).toUpperCase() + (it.propertyType || '').slice(1),
+      energyProvider: it.currentEnergyProvider || '',
+      energyDistributor: it.energyDistributor || '',
+      meterPhase: it.meterPhase || '',
+      monthlyBill: it.averageMonthlyBill || '',
+      roofType: it.roofType || '',
+      roofOrientation: it.roofOrientation || '',
+      numberOfStory: it.numberOfStory || '',
+      shadingAssessment: Array.isArray(it.shadingAssessment) ? it.shadingAssessment : [],
+      primaryMotivation: Array.isArray(it.primaryMotivation) ? it.primaryMotivation : [],
+      existingSolarInstallations: it.existingSolarInstallations || '',
+      interestLevel: it.interestLevel || '',
+      systemSize: it.systemSize || '',
+      estimatedCost: it.estimatedCost || '',
+      leadScore: 80,
+      nextSteps: it.nextSteps || '',
+      notes: it.siteNotes || '',
+      siteNotes: it.siteNotes || '',
+      specialRequirements: it.specialRequirements || '',
+      electricianVisitDate: it.electricianVisitDate || '',
+      electricianVisitTime: it.electricianVisitTime || '',
+      electricianNotes: it.electricianNotes || '',
+      customerEmail: it.customerEmail || '',
+      customerPhone: it.customerPhone || '',
+      attachments: Array.isArray(it.attachments) ? it.attachments : [],
+      checklistItems: Array.isArray(it.checklist) ? it.checklist : [],
+      checklist: Array.isArray(it.checklist)
+        ? (it.checklist as any[]).reduce((acc: any, cur: any) => { acc[cur.item] = !!cur.checked; return acc; }, {})
+        : {},
+      raw: it
+    });
+    const loadLocal = () => {
+      try {
+        const raw = localStorage.getItem('xtr_site_visits');
+        const arr = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(arr)) setSalesSiteVisits(arr.map((it: any, i: number) => normalize(it, i)));
+      } catch {}
+    };
+    loadLocal();
+    const onStorage = (e: StorageEvent) => { if (e.key === 'xtr_site_visits') loadLocal(); };
+    window.addEventListener('storage', onStorage);
+    let unsub: (() => void) | undefined;
+    if (firebaseEnabled && db) {
+      try {
+        unsub = onSnapshot(collection(db, 'site_visits'), (snap) => {
+          const arr = snap.docs.map((d, i) => normalize(d.data(), i));
+          if (Array.isArray(arr)) setSalesSiteVisits(arr as any);
+        });
+      } catch {}
+    }
+    return () => { window.removeEventListener('storage', onStorage); if (typeof unsub === 'function') unsub(); };
+  }, []);
+
+  // Fallback sample data when empty
+  const fallbackSalesData = [
     {
       id: "SV-001",
       customerName: "[Customer Name]",
@@ -142,8 +210,52 @@ export function ProjectManagementSiteVisitScreen() {
     }
   ];
 
-  // Mock data for on-field site visits
-  const onFieldSiteVisits = [
+  // On-field site visits (from storage/firestore)
+  const [onFieldSiteVisits, setOnFieldSiteVisits] = useState<any[]>([]);
+
+  useEffect(() => {
+    const normalize = (it: any, idx: number) => ({
+      id: it.id || `OF-${idx+1}`,
+      customerName: it.customerName || it.title || '',
+      propertyAddress: it.propertyAddress || it.customerAddress || '',
+      technician: it.technicianName || it.technician || '',
+      visitDate: it.visitDate || it.createdAt?.slice(0,10) || '',
+      status: 'completed',
+      installationType: it.installationType || 'Technical Assessment',
+      systemSize: it.systemSize || '',
+      roofAssessment: it.roofCondition || '',
+      electricalAssessment: it.panelCondition || '',
+      safetyScore: 0,
+      installationReadiness: 'Ready',
+      estimatedDuration: it.estimatedDuration || '',
+      specialRequirements: it.specialRequirements || '',
+      notes: it.generalNotes || it.salesNotes || '',
+      checklist: {}
+    });
+    const loadLocal = () => {
+      try {
+        const raw = localStorage.getItem('xtr_onfield_assessments');
+        const arr = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(arr)) setOnFieldSiteVisits(arr.map((it: any, i: number) => normalize(it, i)));
+      } catch {}
+    };
+    loadLocal();
+    const onStorage = (e: StorageEvent) => { if (e.key === 'xtr_onfield_assessments') loadLocal(); };
+    window.addEventListener('storage', onStorage);
+    let unsub: (() => void) | undefined;
+    if (firebaseEnabled && db) {
+      try {
+        unsub = onSnapshot(collection(db, 'onfield_site_visits'), (snap) => {
+          const arr = snap.docs.map((d, i) => normalize(d.data(), i));
+          if (Array.isArray(arr)) setOnFieldSiteVisits(arr as any);
+        });
+      } catch {}
+    }
+    return () => { window.removeEventListener('storage', onStorage); if (typeof unsub === 'function') unsub(); };
+  }, []);
+
+  // Mock data fallback for on-field site visits
+  const fallbackOnField = [
     {
       id: "OF-001",
       customerName: "[Customer Name]",
@@ -216,7 +328,7 @@ export function ProjectManagementSiteVisitScreen() {
     }
   };
 
-  const filteredSalesVisits = salesSiteVisits.filter(visit => {
+  const filteredSalesVisits = (salesSiteVisits.length > 0 ? salesSiteVisits : fallbackSalesData).filter((visit: any) => {
     const matchesSearch = visit.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          visit.propertyAddress.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          visit.salesPerson.toLowerCase().includes(searchTerm.toLowerCase());
@@ -224,7 +336,7 @@ export function ProjectManagementSiteVisitScreen() {
     return matchesSearch && matchesStatus;
   });
 
-  const filteredOnFieldVisits = onFieldSiteVisits.filter(visit => {
+  const filteredOnFieldVisits = (onFieldSiteVisits.length > 0 ? onFieldSiteVisits : fallbackOnField).filter(visit => {
     const matchesSearch = visit.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          visit.propertyAddress.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          visit.technician.toLowerCase().includes(searchTerm.toLowerCase());
@@ -393,8 +505,8 @@ export function ProjectManagementSiteVisitScreen() {
           </TabsList>
 
           <TabsContent value="sales" className="space-y-4">
-            <div className="grid gap-4">
-              {filteredSalesVisits.map((visit) => (
+            <div className="grid gap-4 max-h-[520px] overflow-y-auto pr-1">
+              {filteredSalesVisits.map((visit: any) => (
                 <Card key={visit.id} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between">
@@ -423,6 +535,10 @@ export function ProjectManagementSiteVisitScreen() {
                             <Zap className="w-4 h-4" />
                             <span>{visit.systemSize} - {visit.estimatedCost}</span>
                           </div>
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    <span className="capitalize">{visit.meterPhase || '-'}</span>
+                          </div>
                         </div>
                         <div className="mt-3 flex items-center gap-4">
                           <div className="flex items-center gap-2">
@@ -444,9 +560,6 @@ export function ProjectManagementSiteVisitScreen() {
                           <Eye className="w-4 h-4 mr-2" />
                           View Details
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleEditVisit(visit, 'sales')}>
-                          <Edit className="w-4 h-4" />
-                        </Button>
                       </div>
                     </div>
                   </CardContent>
@@ -456,7 +569,7 @@ export function ProjectManagementSiteVisitScreen() {
           </TabsContent>
 
           <TabsContent value="on-field" className="space-y-4">
-            <div className="grid gap-4">
+            <div className="grid gap-4 max-h-[520px] overflow-y-auto pr-1">
               {filteredOnFieldVisits.map((visit) => (
                 <Card key={visit.id} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-6">
@@ -506,9 +619,6 @@ export function ProjectManagementSiteVisitScreen() {
                         <Button variant="outline" size="sm" onClick={() => handleViewDetails(visit, 'on-field')}>
                           <Eye className="w-4 h-4 mr-2" />
                           View Details
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleEditVisit(visit, 'on-field')}>
-                          <Edit className="w-4 h-4" />
                         </Button>
                       </div>
                     </div>
@@ -571,6 +681,14 @@ export function ProjectManagementSiteVisitScreen() {
                           <p className="text-lg">{selectedVisit.salesPerson}</p>
                         </div>
                         <div>
+                          <Label className="text-sm font-medium text-gray-600">Customer Email</Label>
+                          <p className="text-lg">{selectedVisit.customerEmail || '-'}</p>
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium text-gray-600">Customer Phone</Label>
+                          <p className="text-lg">{selectedVisit.customerPhone || '-'}</p>
+                        </div>
+                        <div>
                           <Label className="text-sm font-medium text-gray-600">Property Type</Label>
                           <p className="text-lg">{selectedVisit.propertyType}</p>
                         </div>
@@ -579,8 +697,20 @@ export function ProjectManagementSiteVisitScreen() {
                           <p className="text-lg">{selectedVisit.energyProvider}</p>
                         </div>
                         <div>
+                          <Label className="text-sm font-medium text-gray-600">Energy Distributor</Label>
+                          <p className="text-lg">{selectedVisit.energyDistributor || '-'}</p>
+                        </div>
+                        <div>
                           <Label className="text-sm font-medium text-gray-600">Monthly Bill</Label>
                           <p className="text-lg">{selectedVisit.monthlyBill}</p>
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium text-gray-600">Meter Phase</Label>
+                          <p className="text-lg capitalize">{selectedVisit.meterPhase || '-'}</p>
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium text-gray-600">Roof Orientation</Label>
+                          <p className="text-lg">{selectedVisit.roofOrientation || '-'}</p>
                         </div>
                         <div>
                           <Label className="text-sm font-medium text-gray-600">System Size</Label>
@@ -591,20 +721,33 @@ export function ProjectManagementSiteVisitScreen() {
                           <p className="text-lg">{selectedVisit.estimatedCost}</p>
                         </div>
                         <div>
-                          <Label className="text-sm font-medium text-gray-600">Lead Score</Label>
-                          <div className="flex items-center gap-2">
-                            <div className="w-32 bg-gray-200 rounded-full h-2">
-                              <div 
-                                className="bg-yellow-500 h-2 rounded-full" 
-                                style={{ width: `${selectedVisit.leadScore}%` }}
-                              ></div>
+                          <Label className="text-sm font-medium text-gray-600">Roof Type</Label>
+                          <p className="text-lg">{selectedVisit.roofType || '-'}</p>
                             </div>
-                            <span className="text-lg font-medium">{selectedVisit.leadScore}</span>
+                        <div>
+                          <Label className="text-sm font-medium text-gray-600">Number of Storey</Label>
+                          <p className="text-lg">{selectedVisit.numberOfStory || '-'}</p>
                           </div>
-                        </div>
+                        
                         <div>
                           <Label className="text-sm font-medium text-gray-600">Next Steps</Label>
                           <p className="text-lg">{selectedVisit.nextSteps}</p>
+                        </div>
+                        <div className="md:col-span-2">
+                          <Label className="text-sm font-medium text-gray-600">Shading Assessment</Label>
+                          <p className="text-lg">{Array.isArray(selectedVisit.shadingAssessment) && selectedVisit.shadingAssessment.length > 0 ? selectedVisit.shadingAssessment.join(', ') : '-'}</p>
+                        </div>
+                        <div className="md:col-span-2">
+                          <Label className="text-sm font-medium text-gray-600">Primary Motivation</Label>
+                          <p className="text-lg">{Array.isArray(selectedVisit.primaryMotivation) && selectedVisit.primaryMotivation.length > 0 ? selectedVisit.primaryMotivation.join(', ') : '-'}</p>
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium text-gray-600">Existing Solar Installations</Label>
+                          <p className="text-lg capitalize">{selectedVisit.existingSolarInstallations || '-'}</p>
+                        </div>
+                        <div>
+                          <Label className="text-sm font-medium text-gray-600">Interest Level</Label>
+                          <p className="text-lg">{selectedVisit.interestLevel || '-'}</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -615,19 +758,53 @@ export function ProjectManagementSiteVisitScreen() {
                       </CardHeader>
                       <CardContent>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {Object.entries(selectedVisit.checklist).map(([key, value]) => (
-                            <div key={key} className="flex items-center gap-2">
-                              {value ? (
+                          {Array.isArray(selectedVisit.checklistItems) && selectedVisit.checklistItems.length > 0 ? (
+                            selectedVisit.checklistItems.map((item: any) => (
+                              <div key={item.id} className="flex items-center gap-2">
+                                {item.checked ? (
                                 <CheckCircle className="w-5 h-5 text-green-500" />
                               ) : (
                                 <AlertCircle className="w-5 h-5 text-red-500" />
                               )}
-                              <span className="capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                                <span>{item.item}</span>
                             </div>
-                          ))}
+                            ))
+                          ) : (
+                            <p className="text-sm text-gray-600">No checklist data</p>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
+
+                    {(selectedVisit.siteNotes || selectedVisit.specialRequirements || selectedVisit.electricianVisitDate || selectedVisit.electricianVisitTime || selectedVisit.electricianNotes) && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Notes & Electrician Site Visit</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="md:col-span-2">
+                            <Label className="text-sm font-medium text-gray-600">Site Notes</Label>
+                            <p className="text-lg">{selectedVisit.siteNotes || '-'}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <Label className="text-sm font-medium text-gray-600">Special Requirements</Label>
+                            <p className="text-lg">{selectedVisit.specialRequirements || '-'}</p>
+                          </div>
+                          <div>
+                            <Label className="text-sm font-medium text-gray-600">Electrician Visit Date</Label>
+                            <p className="text-lg">{selectedVisit.electricianVisitDate || '-'}</p>
+                          </div>
+                          <div>
+                            <Label className="text-sm font-medium text-gray-600">Electrician Visit Time</Label>
+                            <p className="text-lg">{selectedVisit.electricianVisitTime || '-'}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <Label className="text-sm font-medium text-gray-600">Notes for Electrician</Label>
+                            <p className="text-lg">{selectedVisit.electricianNotes || '-'}</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
                   </>
                 )}
 

@@ -13,9 +13,11 @@ import { LeadsCRMScreen } from "./components/screens/LeadsCRMScreen";
 import { SiteVisitScreen } from "./components/screens/SiteVisitScreen";
 import { OnFieldSiteVisitScreen } from "./components/screens/OnFieldSiteVisitScreen";
 import { ProjectManagementSiteVisitScreen } from "./components/screens/ProjectManagementSiteVisitScreen";
+import { SubcontractorSiteVisitScreen } from "./components/screens/SubcontractorSiteVisitScreen";
 import { ProjectManagementScreen } from "./components/screens/ProjectManagementScreen";
 import { RebateComplianceScreen } from "./components/screens/RebateComplianceScreen";
 import { InstallationDayScreen } from "./components/screens/InstallationDayScreen";
+import { OnFieldCalendarScreen } from "./components/screens/OnFieldCalendarScreen";
 import { InspectionScreen } from "./components/screens/InspectionScreen";
 import { BillingPaymentsScreen } from "./components/screens/BillingPaymentsScreen";
 import { ResourceManagementScreen } from "./components/screens/ResourceManagementScreen";
@@ -80,9 +82,11 @@ type Screen =
   | "dashboard"
   | "leads-crm"
   | "site-visit"
+  | "subcontractor-site-visit"
   | "project-management"
   | "rebate"
   | "installation"
+  | "on-field-calendar"
   | "inspection"
   | "billing"
   | "resources"
@@ -167,7 +171,7 @@ function App() {
       if (!enforceRetailerTeam("operations", "Access denied: This account is restricted to Operations team. Please select Operations to continue.")) {
         return;
     }
-    } else if (lowerEmail === "ashely@xtechsrenewables.com.au") {
+    } else if (lowerEmail === "ashley@xtechsrenewables.com.au") {
       if (!enforceRetailerTeam("on-field", "Access denied: This account is restricted to On-Field team. Please select On-Field to continue.")) {
         return;
       }
@@ -221,8 +225,10 @@ function App() {
       }
       const restoredRole = parsed.userRole as UserRole;
       const restoredTeam = restoredRole === "retailer" ? (parsed.retailerTeam as RetailerTeam | null | undefined) ?? null : null;
-      const restoredScreen = (parsed.currentScreen as Screen) || "dashboard";
+      let restoredScreen = (parsed.currentScreen as Screen) || "dashboard";
       const restoredEmail = typeof parsed.userEmail === "string" ? parsed.userEmail : "";
+      
+      // Project Management screen is available - no redirect needed
 
       setUserRole(restoredRole);
       setRetailerTeam(restoredTeam);
@@ -243,6 +249,45 @@ function App() {
       localStorage.removeItem(SESSION_STORAGE_KEY);
     }
   }, []);
+
+  // Listen for navigation events from inner screens
+  useEffect(() => {
+    const onNav = (e: Event) => {
+      try {
+        const detail = (e as CustomEvent).detail as string;
+        if (!detail) return;
+        if (detail === 'site-visit') {
+          setCurrentScreen('site-visit');
+          const now = Date.now();
+          lastActivityRef.current = now;
+          const payload = {
+            userRole,
+            retailerTeam: userRole === 'retailer' ? retailerTeam : null,
+            userEmail,
+            currentScreen: 'site-visit' as Screen,
+            lastActive: now,
+          } as SessionSnapshot;
+          storedSessionRef.current = payload;
+          try { window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload)); } catch {}
+        } else if (detail === 'leads-crm') {
+          setCurrentScreen('leads-crm');
+          const now = Date.now();
+          lastActivityRef.current = now;
+          const payload = {
+            userRole,
+            retailerTeam: userRole === 'retailer' ? retailerTeam : null,
+            userEmail,
+            currentScreen: 'leads-crm' as Screen,
+            lastActive: now,
+          } as SessionSnapshot;
+          storedSessionRef.current = payload;
+          try { window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload)); } catch {}
+        }
+      } catch {}
+    };
+    window.addEventListener('xtr-nav', onNav as EventListener);
+    return () => window.removeEventListener('xtr-nav', onNav as EventListener);
+  }, [userRole, retailerTeam, userEmail]);
 
   useEffect(() => {
     if (!userRole) {
@@ -322,9 +367,11 @@ function App() {
         { id: "dashboard" as Screen, label: "Dashboard", icon: Home, teams: ["sales", "on-field", "project-management", "operations"] },
         { id: "leads-crm" as Screen, label: "Leads CRM", icon: Users, teams: ["sales"] },
         { id: "site-visit" as Screen, label: "Site Visit", icon: Search, teams: ["sales", "on-field", "project-management", "operations"] },
+        { id: "subcontractor-site-visit" as Screen, label: "Retailer Site Visit", icon: Clipboard, teams: ["on-field"] },
         { id: "project-management" as Screen, label: "Project Management", icon: Calendar, teams: ["project-management", "operations"] },
         { id: "rebate" as Screen, label: "Rebate & Compliance", icon: FileCheck, teams: ["project-management"] },
         { id: "installation" as Screen, label: "Installation Day", icon: Wrench, teams: ["on-field"] },
+        { id: "on-field-calendar" as Screen, label: "Calendar", icon: Calendar, teams: ["on-field"] },
         { id: "inspection" as Screen, label: "Inspection & Grid", icon: Search, teams: ["project-management", "operations"] },
         { id: "attendance" as Screen, label: "Attendance", icon: Clock, teams: ["sales", "on-field", "project-management", "operations"] },
         { id: "resources" as Screen, label: "Resource Management", icon: Users, teams: ["operations"] },
@@ -391,13 +438,17 @@ function App() {
         } else if (retailerTeam === "project-management" || retailerTeam === "operations") {
           return <ProjectManagementSiteVisitScreen />;
         }
-        return <SiteVisitScreen />;
+        return <SiteVisitScreen userEmail={userEmail} />;
+      case "subcontractor-site-visit":
+        return <SubcontractorSiteVisitScreen />;
       case "project-management":
         return <ProjectManagementScreen />;
       case "rebate":
         return <RebateComplianceScreen />;
       case "installation":
         return <InstallationDayScreen />;
+      case "on-field-calendar":
+        return <OnFieldCalendarScreen />;
       case "inspection":
         return <InspectionScreen />;
       case "billing":

@@ -53,6 +53,7 @@
     build: {
       target: 'esnext',
       outDir: 'build',
+      sourcemap: true,
     },
     server: {
       port: 3002,

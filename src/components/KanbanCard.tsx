@@ -2,7 +2,7 @@ import React from "react";
 import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Avatar, AvatarFallback } from "./ui/avatar";
-import { Calendar, DollarSign } from "lucide-react";
+import { Calendar, DollarSign, Phone } from "lucide-react";
 
 interface KanbanCardProps {
   title: string;
@@ -46,8 +46,12 @@ export function KanbanCard({ title, company, value, date, assignee, tags, priori
         <div className="flex items-center justify-between text-muted-foreground">
           {value && (
             <div className="flex items-center gap-1">
-              <DollarSign className="w-4 h-4" />
-              <span>{value}</span>
+              {(() => {
+                const v = String(value).trim();
+                const isPhone = !v.includes('$') && /^[+]?[\d\s-]{7,}$/.test(v);
+                return isPhone ? <Phone className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />;
+              })()}
+              <span>{String(value).replace(/^\s*\$\s*/, '')}</span>
             </div>
           )}
           {date && (
@@ -56,7 +60,7 @@ export function KanbanCard({ title, company, value, date, assignee, tags, priori
               <span>{date}</span>
             </div>
           )}
-          {assignee && (
+          {assignee && assignee !== 'PM' && (
             <Avatar className="w-6 h-6">
               <AvatarFallback className="text-xs">{assignee}</AvatarFallback>
             </Avatar>

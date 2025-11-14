@@ -1,10 +1,6 @@
 {
   "projects": {
-    "default": "multi-tenant-88ce1"
+    "default": "multi-tenant-web"
   }
 }
-{
-  "projects": {
-    "default": "multi-tenant-88ce1"
-  }
-}
+

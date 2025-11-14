@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { db, firebaseEnabled } from "../../lib/firebase";
+import { addDoc, collection, setDoc, doc, onSnapshot } from "firebase/firestore";
 import { subscribeDoc, writeDocSafe } from "../../lib/persistence";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { KanbanCard } from "../KanbanCard";
@@ -63,7 +65,6 @@ interface Lead {
     };
     systemInfo?: {
       systemSize?: string;
-      panelType?: string;
       inverterType?: string;
       batterySize?: string;
       mountingType?: string;
@@ -92,6 +93,8 @@ interface Lead {
     };
     projectNotes?: string;
   };
+  linkedProject?: { id: string; title: string };
+  projectSnapshot?: any;
 }
 
 interface ProjectFormState {
@@ -123,11 +126,21 @@ interface ProjectFormState {
   preApprovalNumber: string;
   distributor: string;
   meterNumber: string;
+  nmiNumber: string;
+  energyRetailer: string;
+  solarVictoriaEligible: string;
+  meterPhase: string;
   // System Information
   systemSize: string;
-  panelType: string;
-  inverterType: string;
+  panelBrand: string;
+  panelModuleWatts: string;
+  inverterBrand: string;
+  inverterSize: string;
   batterySize: string;
+  batteryBrand: string;
+  batteryModel: string;
+  evChargerBrand: string;
+  evChargerModel: string;
   mountingType: string;
 }
 
@@ -160,11 +173,21 @@ const createInitialProjectForm = (): ProjectFormState => ({
   preApprovalNumber: "",
   distributor: "",
   meterNumber: "",
+  nmiNumber: "",
+  energyRetailer: "",
+  solarVictoriaEligible: "",
+  meterPhase: "",
   // System Information
   systemSize: "",
-  panelType: "",
-  inverterType: "",
+  panelBrand: "",
+  panelModuleWatts: "",
+  inverterBrand: "",
+  inverterSize: "",
   batterySize: "",
+  batteryBrand: "",
+  batteryModel: "",
+  evChargerBrand: "",
+  evChargerModel: "",
   mountingType: "",
 });
 
@@ -270,6 +293,9 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSource, setSelectedSource] = useState("all");
   const [selectedProduct, setSelectedProduct] = useState("all-products");
+  const [salesVisitsFs, setSalesVisitsFs] = useState<any[]>([]);
+  const [onFieldFs, setOnFieldFs] = useState<any[]>([]);
+  const [pmProjectsFs, setPmProjectsFs] = useState<any[]>([]);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   
   const [commentText, setCommentText] = useState("");
@@ -278,6 +304,7 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [selectedSystemType, setSelectedSystemType] = useState<string>("");
   const [otherSelections, setOtherSelections] = useState<{[key: string]: string}>({});
+  const [pendingStatus, setPendingStatus] = useState<string>("new");
 
   // New Lead dialog state
   const [showNewLead, setShowNewLead] = useState(false);
@@ -292,29 +319,7 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
     description: "",
   });
 
-  // Resources for assignee dropdowns (loaded from Resource Management persistence)
-  const [resourceNames, setResourceNames] = useState<string[]>([]);
-
-  useEffect(() => {
-    const loadResources = () => {
-      try {
-        const raw = localStorage.getItem('xtr_resources');
-        const list = raw ? JSON.parse(raw) : [];
-        const names = (Array.isArray(list) ? list : [])
-          .filter((r: any) => r && typeof r.name === 'string' && r.name.trim().length > 0)
-          .map((r: any) => r.name.trim());
-        setResourceNames(names);
-      } catch {
-        setResourceNames([]);
-      }
-    };
-    loadResources();
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === 'xtr_resources') loadResources();
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  // Team Assignment UI removed per request; resources are no longer loaded here
 
   // Update commentEmail when userEmail prop changes
   useEffect(() => {
@@ -324,6 +329,267 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
       console.log("Comment email set to:", userEmail);
     }
   }, [userEmail]);
+
+  // Subscribe to sales site visits from Firestore for cross-device visibility
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    if (firebaseEnabled && db) {
+      try {
+        unsub = onSnapshot(collection(db, 'site_visits'), (snap: any) => {
+          const arr = snap?.docs?.map((d: any) => d?.data && typeof d.data === 'function' ? d.data() : d?.data()) || [];
+          if (Array.isArray(arr)) setSalesVisitsFs(arr as any);
+        });
+      } catch {}
+    }
+    return () => { if (typeof unsub === 'function') unsub(); };
+  }, []);
+
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    if (firebaseEnabled && db) {
+      try {
+        unsub = onSnapshot(collection(db, 'onfield_site_visits'), (snap: any) => {
+          const arr = snap?.docs?.map((d: any) => d?.data && typeof d.data === 'function' ? d.data() : d?.data()) || [];
+          if (Array.isArray(arr)) setOnFieldFs(arr as any);
+        });
+      } catch {}
+    }
+    return () => { if (typeof unsub === 'function') unsub(); };
+  }, []);
+
+  // PM projects cross-device snapshot for backfilling projectSnapshot on attach
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    if (firebaseEnabled && db) {
+      try {
+        unsub = onSnapshot(collection(db, 'pm_projects'), (snap: any) => {
+          const arr = snap?.docs?.map((d: any) => d?.data && typeof d.data === 'function' ? d.data() : d?.data()) || [];
+          if (Array.isArray(arr)) setPmProjectsFs(arr as any);
+        });
+      } catch {}
+    }
+    return () => { if (typeof unsub === 'function') unsub(); };
+  }, []);
+
+  useEffect(() => {
+    if (selectedLead) {
+      setPendingStatus(selectedLead.status || 'new');
+    }
+  }, [selectedLead]);
+
+  // Backfill project snapshot on selected lead if missing (local or Firestore PM projects)
+  useEffect(() => {
+    if (!selectedLead) return;
+    const hasSnap = (selectedLead as any).projectSnapshot;
+    if (hasSnap) return;
+    try {
+      const raw = localStorage.getItem('xtr_projects');
+      const arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr)) {
+        const name = (selectedLead as any)?.title;
+        const addr = (selectedLead as any)?.company;
+        const email = (selectedLead as any)?.tags?.[0];
+        const match = arr.find((p: any) => (
+          (name && p.customerName === name) || (email && p.customerEmail === email) || (addr && p.customerAddress === addr)
+        ));
+        if (match) { setSelectedLead({ ...(selectedLead as any), projectSnapshot: match } as any); return; }
+      }
+    } catch {}
+    if (Array.isArray(pmProjectsFs) && pmProjectsFs.length > 0) {
+      try {
+        const name = (selectedLead as any)?.title;
+        const addr = (selectedLead as any)?.company;
+        const email = (selectedLead as any)?.tags?.[0];
+        const matchFs = pmProjectsFs.find((p: any) => (
+          (name && p.customerName === name) || (email && p.customerEmail === email) || (addr && p.customerAddress === addr)
+        ));
+        if (matchFs) { setSelectedLead({ ...(selectedLead as any), projectSnapshot: matchFs } as any); }
+      } catch {}
+    }
+  }, [selectedLead, pmProjectsFs]);
+
+  // Listen for site visit save events to attach data and move status
+  useEffect(() => {
+    const onAttachSiteVisit = (e: Event) => {
+      try {
+        const detail = (e as CustomEvent).detail as any;
+        const { leadId, siteVisit } = detail || {};
+        if (!siteVisit) return;
+        setColumns((prevCols: any) => {
+          if (!prevCols) return prevCols;
+          // Locate the lead either by provided id or by matching customer/email/address
+          let sourceIdx = -1;
+          let leadIdx = -1;
+          let lead: any = null;
+          if (leadId) {
+            sourceIdx = prevCols.findIndex((c: any) => (c.leads || []).some((l: any) => String(l.id) === String(leadId)));
+            if (sourceIdx !== -1) {
+              leadIdx = prevCols[sourceIdx].leads.findIndex((l: any) => String(l.id) === String(leadId));
+              lead = prevCols[sourceIdx].leads[leadIdx];
+            }
+          }
+          if (!lead) {
+            const svName = String(siteVisit.customerName || '').trim().toLowerCase();
+            const svEmail = String(siteVisit.customerEmail || '').trim().toLowerCase();
+            const svAddr = String(siteVisit.propertyAddress || '').trim().toLowerCase();
+            prevCols.forEach((c: any, ci: number) => {
+              const idx = (c.leads || []).findIndex((l: any) => {
+                const lName = String(l.title || '').trim().toLowerCase();
+                const lEmail = l.tags && l.tags[0] ? String(l.tags[0]).trim().toLowerCase() : '';
+                const lAddr = String(l.company || '').trim().toLowerCase();
+                return (svName && svName === lName) || (svEmail && svEmail === lEmail) || (svAddr && svAddr === lAddr);
+              });
+              if (idx >= 0 && lead == null) { sourceIdx = ci; leadIdx = idx; lead = c.leads[idx]; }
+            });
+          }
+          if (!lead || sourceIdx === -1 || leadIdx === -1) {
+            // If no matching lead found on board, upsert a lightweight card into Sales Site Visit
+            const nextCols = prevCols.map((c: any) => ({ ...c, leads: [...(c.leads || [])] }));
+            const destIdx = nextCols.findIndex((c: any) => c.id === 'sales-site-visit');
+            const dest = destIdx >= 0 ? nextCols[destIdx] : { id: 'sales-site-visit', title: 'Sales Site Visit', count: 0, leads: [] };
+            if (destIdx === -1) nextCols.push(dest);
+            // Try to backfill project snapshot from local and Firestore PM projects
+            let projectSnap: any = null; let linked: any = null;
+            try {
+              const raw = localStorage.getItem('xtr_projects');
+              const arr = raw ? JSON.parse(raw) : [];
+              const name = String(siteVisit.customerName || '').trim();
+              const addr = String(siteVisit.propertyAddress || '').trim();
+              const email = String(siteVisit.customerEmail || '').trim();
+              const matchLocal = (Array.isArray(arr) ? arr : []).find((p: any) => (
+                (name && p.customerName === name) || (email && p.customerEmail === email) || (addr && p.customerAddress === addr)
+              ));
+              if (matchLocal) { projectSnap = matchLocal; linked = { id: matchLocal.id, title: matchLocal.title }; }
+            } catch {}
+            if (!projectSnap && Array.isArray(pmProjectsFs) && pmProjectsFs.length > 0) {
+              try {
+                const name = String(siteVisit.customerName || '').trim();
+                const addr = String(siteVisit.propertyAddress || '').trim();
+                const email = String(siteVisit.customerEmail || '').trim();
+                const matchFs = pmProjectsFs.find((p: any) => (
+                  (name && p.customerName === name) || (email && p.customerEmail === email) || (addr && p.customerAddress === addr)
+                ));
+                if (matchFs) { projectSnap = matchFs; linked = { id: matchFs.id, title: matchFs.title }; }
+              } catch {}
+            }
+            const newLead = {
+              id: `lead-${Date.now()}`,
+              title: siteVisit.customerName || 'Untitled',
+              company: siteVisit.propertyAddress || '',
+              value: siteVisit.customerPhone || '',
+              date: (new Date().toISOString().slice(0,10)),
+              tags: [siteVisit.customerEmail || ''].filter(Boolean),
+              priority: 'medium',
+              status: 'sales-site-visit',
+              siteVisit,
+              linkedProject: linked || undefined,
+              projectSnapshot: projectSnap || undefined
+            } as any;
+            const finalDestIdx = nextCols.findIndex((c: any) => c.id === 'sales-site-visit');
+            const finalDest = nextCols[finalDestIdx];
+            const newLeads = [newLead, ...(finalDest.leads || [])];
+            nextCols[finalDestIdx] = { ...finalDest, leads: newLeads, count: newLeads.length };
+            persistColumns(nextCols);
+            return nextCols;
+          }
+          const updatedLead = { ...lead, status: 'sales-site-visit', siteVisit };
+          const nextCols = prevCols.map((c: any, i: number) => {
+            if (i === sourceIdx) {
+              const newLeads = c.leads.filter((l: any, idx: number) => idx !== leadIdx);
+              return { ...c, leads: newLeads, count: newLeads.length };
+            }
+            return { ...c };
+          });
+          const destIdx = nextCols.findIndex((c: any) => c.id === 'sales-site-visit');
+          if (destIdx >= 0) {
+            const dest = nextCols[destIdx];
+            const newLeads = [updatedLead, ...(dest.leads || [])];
+            nextCols[destIdx] = { ...dest, leads: newLeads, count: newLeads.length };
+          }
+          // persist using existing helper
+          persistColumns(nextCols);
+          // update selectedLead panel if it's open for this lead
+          if (selectedLead && (String(selectedLead.id) === String(leadId || lead?.id))) {
+            setSelectedLead(updatedLead as any);
+          }
+          return nextCols;
+        });
+      } catch {}
+    };
+    window.addEventListener('xtr-leads-attach-site-visit', onAttachSiteVisit as EventListener);
+    const onAttachOnField = (e: Event) => {
+      try {
+        const detail = (e as CustomEvent).detail as any;
+        const { leadId, assessment } = detail || {};
+        if (!assessment) return;
+        setColumns((prevCols: any) => {
+          if (!prevCols) return prevCols;
+          // Prefer ID match; otherwise match by name/email/address
+          let colIdx = -1;
+          if (leadId) {
+            colIdx = prevCols.findIndex((c: any) => (c.leads || []).some((l: any) => String(l.id) === String(leadId)));
+          }
+          // Fallback matching
+          let matchIdx = -1;
+          if (colIdx === -1) {
+            const name = String(assessment.customerName || '').trim().toLowerCase();
+            const email = String(assessment.customerEmail || '').trim().toLowerCase();
+            const addr = String(assessment.propertyAddress || '').trim().toLowerCase();
+            prevCols.forEach((c: any, ci: number) => {
+              const li = (c.leads || []).findIndex((l: any) => {
+                const lName = String(l.title || '').trim().toLowerCase();
+                const lEmail = l.tags && l.tags[0] ? String(l.tags[0]).trim().toLowerCase() : '';
+                const lAddr = String(l.company || '').trim().toLowerCase();
+                return (name && lName === name) || (email && lEmail === email) || (addr && lAddr === addr);
+              });
+              if (li >= 0 && colIdx === -1) { colIdx = ci; matchIdx = li; }
+            });
+          }
+          if (colIdx === -1) return prevCols;
+          const leads = prevCols[colIdx].leads.map((l: any, idx: number) => (String(l.id) === String(leadId) || idx === matchIdx) ? { ...l, onField: assessment, onFieldStatus: 'completed' } : l);
+          const nextCols = prevCols.map((c: any, i: number) => i === colIdx ? { ...c, leads, count: leads.length } : c);
+          persistColumns(nextCols);
+          if (selectedLead) {
+            const idMatch = leadId && String(selectedLead.id) === String(leadId);
+            const nameMatch = String((selectedLead as any).title || '').trim().toLowerCase() === String(assessment.customerName || '').trim().toLowerCase();
+            const emailMatch = ((selectedLead as any).tags && (selectedLead as any).tags[0] ? String((selectedLead as any).tags[0]).toLowerCase() : '') === String(assessment.customerEmail || '').trim().toLowerCase();
+            const addrMatch = String((selectedLead as any).company || '').trim().toLowerCase() === String(assessment.propertyAddress || '').trim().toLowerCase();
+            if (idMatch || nameMatch || emailMatch || addrMatch) setSelectedLead({ ...(selectedLead as any), onField: assessment, onFieldStatus: 'completed' } as any);
+          }
+          return nextCols;
+        });
+      } catch {}
+    };
+    window.addEventListener('xtr-leads-attach-onfield', onAttachOnField as EventListener);
+    // Process any pending site visit saved during navigation
+    try {
+      const raw = localStorage.getItem('xtr_pending_site_visit');
+      if (raw) {
+        const pending = JSON.parse(raw) || {};
+        if (pending.leadId && pending.siteVisit) {
+          onAttachSiteVisit(new CustomEvent('evt', { detail: pending }) as unknown as Event);
+        }
+        localStorage.removeItem('xtr_pending_site_visit');
+      }
+    } catch {}
+    try {
+      const raw = localStorage.getItem('xtr_pending_onfield');
+      if (raw) {
+        const pending = JSON.parse(raw) || {};
+        if (pending.leadId && pending.assessment) {
+          onAttachOnField(new CustomEvent('evt', { detail: pending }) as unknown as Event);
+        }
+        localStorage.removeItem('xtr_pending_onfield');
+      }
+    } catch {}
+
+    
+
+    return () => {
+      window.removeEventListener('xtr-leads-attach-site-visit', onAttachSiteVisit as EventListener);
+      window.removeEventListener('xtr-leads-attach-onfield', onAttachOnField as EventListener);
+    };
+  }, [selectedLead]);
 
   const [columns, setColumns] = useState([
     {
@@ -421,7 +687,7 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
   const handleSubmitProject = async () => {
     if (!selectedLead) return;
     if (!projectForm.title.trim()) { alert('Project title is required'); return; }
-    const projectId = Date.now().toString();
+    const projectId = (selectedLead as any).linkedProject?.id || Date.now().toString();
     const projectPayload = {
       id: projectId,
       title: projectForm.title.trim(),
@@ -442,6 +708,7 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
       propertyInfo: {
         houseStorey: projectForm.houseStorey === 'other' ? (projectForm.houseStoreyOther || 'other') : (projectForm.houseStorey || null),
         roofType: projectForm.roofType || null,
+        meterPhase: projectForm.meterPhase || null,
         accessSecondStorey: projectForm.accessSecondStorey || null,
         accessToInverter: projectForm.accessInverter || null,
       },
@@ -458,22 +725,59 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
       },
       utilityInfo: {
         preApprovalNumber: projectForm.preApprovalNumber || null,
+        energyRetailer: projectForm.energyRetailer || null,
+        solarVictoriaEligible: projectForm.solarVictoriaEligible || null,
         distributor: projectForm.distributor || null,
+        nmiNumber: projectForm.nmiNumber || null,
         meterNumber: projectForm.meterNumber || null,
       },
       systemInfo: {
         systemSize: projectForm.systemSize || null,
-        panelType: projectForm.panelType || null,
-        inverterType: projectForm.inverterType || null,
+        panelBrand: projectForm.panelBrand || null,
+        panelModuleWatts: projectForm.panelModuleWatts || null,
+        inverterBrand: projectForm.inverterBrand || null,
+        inverterSize: projectForm.inverterSize || null,
         batterySize: projectForm.batterySize || null,
+        batteryBrand: projectForm.batteryBrand || null,
+        batteryModel: projectForm.batteryModel || null,
+        evChargerBrand: projectForm.evChargerBrand || null,
+        evChargerModel: projectForm.evChargerModel || null,
         mountingType: projectForm.mountingType || null,
       },
       createdAt: new Date().toISOString(),
     };
     await writeDocSafe('projects', projectId, projectPayload);
-    try { localStorage.setItem('xtr_projects', JSON.stringify([projectPayload, ...JSON.parse(localStorage.getItem('xtr_projects') || '[]')])); } catch {}
+    try {
+      if (firebaseEnabled && db) {
+        await setDoc(doc(db, 'projects', projectId), projectPayload as any, { merge: true });
+      }
+    } catch {}
+    // Link the newly created project to the selected lead and move status if changed
+    const targetStatus = projectForm.status || selectedLead.status || 'new';
+    const updatedLead = {
+      ...selectedLead,
+      status: targetStatus,
+      linkedProject: { id: projectId, title: projectPayload.title },
+      projectSnapshot: projectPayload,
+    } as Lead;
+    const sourceColId = selectedLead.status || 'new';
+    const updatedColumns = columns.map(column => {
+      if (column.id === sourceColId) {
+        return { ...column, leads: column.leads.filter(l => l.id !== selectedLead.id), count: column.count };
+      }
+      return column;
+    });
+    const destIndex = updatedColumns.findIndex(c => c.id === targetStatus);
+    if (destIndex >= 0) {
+      const dest = updatedColumns[destIndex];
+      const newLeads = [updatedLead, ...dest.leads];
+      updatedColumns[destIndex] = { ...dest, leads: newLeads, count: newLeads.length } as any;
+    }
+    persistColumns(updatedColumns);
     setShowProjectForm(false);
-    alert('Project created successfully. You can manage it in Project Management.');
+    // Notify listeners that projects changed (for PM screen live update)
+    try { window.dispatchEvent(new Event('xtr-projects-updated')); } catch {}
+    alert('Project created successfully. It will remain in the Sales pipeline until you move the lead to Closed Won, then it will appear in Project Management (New).');
   };
 
   const handleOtherSelection = (fieldName: string, value: string) => {
@@ -483,10 +787,71 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
     }));
   };
 
+  const handleEditProject = () => {
+    if (!selectedLead || !(selectedLead as any).projectSnapshot) return;
+    const snap: any = (selectedLead as any).projectSnapshot;
+    const base = createInitialProjectForm();
+    setProjectForm({
+      ...base,
+      title: snap.title || '',
+      status: snap.status || 'new',
+      systemType: snap.systemType || '',
+      price: snap.price || '',
+      projectId: snap.projectCode || '',
+      startDate: snap.startDate || '',
+      notes: snap.notes || '',
+      clientType: snap.clientType || '',
+      customerName: snap.customerName || '',
+      customerEmail: snap.customerEmail || '',
+      customerContact: snap.customerPhone || '',
+      customerAddress: snap.customerAddress || '',
+      location: snap.location || '',
+      houseStorey: snap.propertyInfo?.houseStorey || '',
+      houseStoreyOther: '',
+      roofType: snap.propertyInfo?.roofType || '',
+      accessSecondStorey: snap.propertyInfo?.accessSecondStorey || '',
+      accessInverter: snap.propertyInfo?.accessToInverter || '',
+      monitoring: snap.additionalInfo?.monitoring || '',
+      monitoringAmount: snap.additionalInfo?.monitoringAmount || '',
+      stcPortal: snap.additionalInfo?.stcPortal || '',
+      preApprovalNumber: snap.utilityInfo?.preApprovalNumber || '',
+      distributor: snap.utilityInfo?.distributor || '',
+      meterNumber: snap.utilityInfo?.meterNumber || '',
+      nmiNumber: snap.utilityInfo?.nmiNumber || '',
+      energyRetailer: snap.utilityInfo?.energyRetailer || '',
+      solarVictoriaEligible: snap.utilityInfo?.solarVictoriaEligible || '',
+      meterPhase: snap.propertyInfo?.meterPhase || '',
+      systemSize: snap.systemInfo?.systemSize || '',
+      panelBrand: snap.systemInfo?.panelBrand || '',
+      panelModuleWatts: snap.systemInfo?.panelModuleWatts || '',
+      inverterBrand: snap.systemInfo?.inverterBrand || '',
+      inverterSize: snap.systemInfo?.inverterSize || '',
+      batterySize: snap.systemInfo?.batterySize || '',
+      batteryBrand: snap.systemInfo?.batteryBrand || '',
+      batteryModel: snap.systemInfo?.batteryModel || '',
+      evChargerBrand: snap.systemInfo?.evChargerBrand || '',
+      evChargerModel: snap.systemInfo?.evChargerModel || '',
+      mountingType: snap.systemInfo?.mountingType || '',
+      salesRep: [],
+      projectManager: [],
+      leadElectrician: [],
+      apprentice: [],
+    });
+    setShowProjectForm(true);
+  };
+
   const persistColumns = (nextColumns: any[]) => {
     setColumns(nextColumns);
     // Save as a single doc payload
     writeDocSafe('leads_state', 'columns', { columns: nextColumns });
+    // Also persist locally for other screens to access
+    try { localStorage.setItem('xtr_leads_state_columns', JSON.stringify({ columns: nextColumns })); } catch {}
+    // Firestore write for cross-device sync
+    try {
+      if (firebaseEnabled && db) {
+        setDoc(doc(db, 'leads_state', 'columns'), { columns: nextColumns } as any, { merge: true });
+      }
+    } catch {}
   };
 
   useEffect(() => {
@@ -502,14 +867,32 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
       }
       return order.map(id => byId[id] ? { ...byId[id] } : { id, title: columns.find(c => c.id === id)?.title || id, count: 0, leads: [] });
     };
-    const unsub = subscribeDoc<{ columns: any[] }>('leads_state', 'columns', (data) => {
+    // Prefer Firestore realtime when available
+    let unsubFs: (() => void) | undefined;
+    if (firebaseEnabled && db) {
+      try {
+        unsubFs = onSnapshot(doc(db, 'leads_state', 'columns'), (snap: any) => {
+          const data = typeof snap?.data === 'function' ? snap.data() : undefined;
       if (data && Array.isArray(data.columns)) {
         const next = migrate(data.columns as any);
         setColumns(next as any);
-        writeDocSafe('leads_state','columns',{ columns: next });
+            try { localStorage.setItem('xtr_leads_state_columns', JSON.stringify({ columns: next })); } catch {}
+          }
+        });
+      } catch {}
+    }
+    // Local fallback
+    const unsubLocal = subscribeDoc<{ columns: any[] }>('leads_state', 'columns', (data) => {
+      if (data && Array.isArray(data.columns)) {
+        const next = migrate(data.columns as any);
+        setColumns(next as any);
+        try { localStorage.setItem('xtr_leads_state_columns', JSON.stringify({ columns: next })); } catch {}
       }
     });
-    return () => { if (typeof unsub === 'function') unsub(); };
+    return () => {
+      if (typeof unsubLocal === 'function') unsubLocal();
+      if (typeof unsubFs === 'function') unsubFs();
+    };
   }, []);
 
   const handleDragEnd = (result: any) => {
@@ -528,6 +911,38 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
 
     const draggedLead = { ...sourceColumn.leads[source.index] };
     draggedLead.status = destination.droppableId;
+    if (destination.droppableId === 'on-field-inspection') {
+      (draggedLead as any).onFieldStatus = 'pending';
+      try {
+        const snap = (draggedLead as any).projectSnapshot || {};
+        const sv = (draggedLead as any).siteVisit || {};
+        const salesNotesParts: string[] = [];
+        if (sv.siteNotes) salesNotesParts.push(`• ${sv.siteNotes}`);
+        if (sv.specialRequirements) salesNotesParts.push(`• ${sv.specialRequirements}`);
+        if (sv.nextSteps) salesNotesParts.push(`• ${sv.nextSteps}`);
+        const prefill = {
+          customerName: snap.customerName || draggedLead.title || '',
+          customerEmail: snap.customerEmail || (draggedLead.tags && draggedLead.tags[0]) || '',
+          customerPhone: snap.customerPhone || draggedLead.value || '',
+          propertyAddress: snap.customerAddress || draggedLead.company || '',
+          propertyType: snap.clientType || '',
+          currentEnergyProvider: snap.utilityInfo?.energyRetailer || sv.currentEnergyProvider || '',
+          energyDistributor: snap.utilityInfo?.distributor || sv.energyDistributor || '',
+          averageMonthlyBill: snap.siteVisitInfo?.averageMonthlyBill || sv.averageMonthlyBill || '',
+          roofOrientation: snap.siteVisitInfo?.roofOrientation || sv.roofOrientation || '',
+          roofType: snap.propertyInfo?.roofType || '',
+          meterPhase: snap.propertyInfo?.meterPhase || '',
+          numberOfStory: snap.propertyInfo?.houseStorey || '',
+          shadingAssessment: snap.siteVisitInfo?.shadingAssessment || (Array.isArray(sv.shadingAssessment) ? sv.shadingAssessment : []),
+          primaryMotivation: snap.siteVisitInfo?.primaryMotivation || (Array.isArray(sv.primaryMotivation) ? sv.primaryMotivation : []),
+          existingSolarInstallations: snap.siteVisitInfo?.existingSolarInstallations || sv.existingSolarInstallations || '',
+          interestLevel: snap.siteVisitInfo?.interestLevel || sv.interestLevel || '',
+          salesNotes: salesNotesParts.join('\n'),
+        } as any;
+        localStorage.setItem('xtr_onfield_prefill', JSON.stringify(prefill));
+        localStorage.setItem('xtr_onfield_context', JSON.stringify({ leadId: draggedLead.id }));
+      } catch {}
+    }
 
     const newColumns = columns.map(column => {
       if (column.id === source.droppableId) {
@@ -545,10 +960,48 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
 
     // If the side panel is open for this lead, reflect the new status
     if (selectedLead && selectedLead.id === draggedLead.id) {
-      setSelectedLead({ ...selectedLead, status: draggedLead.status });
+      setSelectedLead({ ...selectedLead, status: draggedLead.status, onFieldStatus: (draggedLead as any).onFieldStatus });
     }
 
     persistColumns(newColumns);
+
+    // If this lead has a linked project and it just became Closed Won, push to PM 'new' column
+    if (destination.droppableId === 'closed-won' && (draggedLead as any).linkedProject) {
+      try {
+        const projectsRaw = localStorage.getItem('xtr_projects');
+        const existing = projectsRaw ? JSON.parse(projectsRaw) : [];
+        const linked = (draggedLead as any).linkedProject as { id: string; title: string };
+        const already = Array.isArray(existing) && existing.some((p: any) => String(p.id) === String(linked.id));
+        if (!already) {
+          const pmItem = {
+            id: linked.id,
+            title: linked.title,
+            status: 'new',
+            date: new Date().toISOString().split('T')[0],
+            tags: [draggedLead?.projectDetails?.systemInfo?.systemSize || '', draggedLead?.projectDetails?.systemType || ''].filter(Boolean),
+            priority: 'medium',
+            value: draggedLead.value || '',
+            customerName: draggedLead.title,
+            customerEmail: (draggedLead.tags && draggedLead.tags[0]) || '',
+            customerContact: draggedLead.value || '',
+            customerAddress: draggedLead.company || '',
+            projectSnapshot: (draggedLead as any).projectSnapshot || undefined,
+            siteVisit: (draggedLead as any).siteVisit || undefined,
+            onField: (draggedLead as any).onField || undefined,
+            comments: Array.isArray((draggedLead as any).comments) ? (draggedLead as any).comments : [],
+          };
+          const next = [pmItem, ...existing];
+          localStorage.setItem('xtr_projects', JSON.stringify(next));
+          // Also persist to Firestore when enabled for cross-device durability
+          try {
+            if (firebaseEnabled && db) {
+              addDoc(collection(db, 'pm_projects'), pmItem as any).catch(() => {});
+            }
+          } catch {}
+          try { window.dispatchEvent(new Event('xtr-projects-updated')); } catch {}
+        }
+      } catch {}
+    }
   };
 
   const handleSubmitComment = () => {
@@ -579,6 +1032,127 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
 
     setCommentText("");
     setShowCommentForm(false);
+  };
+
+  // Inline status change from Lead details (dropdown)
+  const handleInlineStatusChange = async (newStatus: string) => {
+    if (!selectedLead || !newStatus) return;
+    if (newStatus === (selectedLead.status || 'new')) return;
+
+    const sourceColId = selectedLead.status || 'new';
+    const updatedLead: Lead = { ...selectedLead, status: newStatus } as Lead;
+    if (newStatus === 'on-field-inspection') {
+      (updatedLead as any).onFieldStatus = 'pending';
+    }
+
+    const nextColumns = columns.map((column) => {
+      if (column.id === sourceColId) {
+        const newLeads = column.leads.filter((l: Lead) => l.id !== selectedLead.id);
+        return { ...column, leads: newLeads, count: newLeads.length };
+      }
+      if (column.id === newStatus) {
+        const newLeads = [updatedLead, ...column.leads];
+        return { ...column, leads: newLeads, count: newLeads.length };
+      }
+      return column;
+    });
+    persistColumns(nextColumns);
+    setSelectedLead(updatedLead);
+
+    // If moved to Closed Won and a project is linked, ensure PM card exists
+    if (newStatus === 'closed-won' && (updatedLead as any).linkedProject) {
+      try {
+        const linked = (updatedLead as any).linkedProject as { id: string; title: string };
+        const projectsRaw = localStorage.getItem('xtr_projects');
+        const existing = projectsRaw ? JSON.parse(projectsRaw) : [];
+        const already = Array.isArray(existing) && existing.some((p: any) => String(p.id) === String(linked.id));
+        if (!already) {
+          const pmItem = {
+            id: linked.id,
+            title: linked.title,
+            status: 'new',
+            date: new Date().toISOString().split('T')[0],
+            tags: [updatedLead?.projectDetails?.systemInfo?.systemSize || '', updatedLead?.projectDetails?.systemType || ''].filter(Boolean),
+            priority: 'medium',
+            value: updatedLead.value || '',
+            customerName: updatedLead.title,
+            customerEmail: (updatedLead.tags && updatedLead.tags[0]) || '',
+            customerContact: updatedLead.value || '',
+            customerAddress: updatedLead.company || '',
+            projectSnapshot: (updatedLead as any).projectSnapshot || undefined,
+            siteVisit: (updatedLead as any).siteVisit || undefined,
+            onField: (updatedLead as any).onField || undefined,
+            comments: Array.isArray((updatedLead as any).comments) ? (updatedLead as any).comments : [],
+          };
+          const next = [pmItem, ...(Array.isArray(existing) ? existing : [])];
+          localStorage.setItem('xtr_projects', JSON.stringify(next));
+          try {
+            if (firebaseEnabled && db) {
+              addDoc(collection(db, 'pm_projects'), pmItem as any).catch(() => {});
+            }
+          } catch {}
+          try { window.dispatchEvent(new Event('xtr-projects-updated')); } catch {}
+        }
+      } catch {}
+    }
+
+    // If moved to Sales Site Visit, navigate and prefill Site Visit form
+    if (newStatus === 'sales-site-visit') {
+      try {
+        const snap = (updatedLead as any).projectSnapshot || {};
+        const prefill = {
+          customerName: snap.customerName || updatedLead.title || '',
+          customerEmail: snap.customerEmail || (updatedLead.tags && updatedLead.tags[0]) || '',
+          customerPhone: snap.customerPhone || updatedLead.value || '',
+          customerAddress: snap.customerAddress || updatedLead.company || '',
+          clientType: snap.clientType || '',
+          distributor: snap.utilityInfo?.distributor || '',
+          roofType: snap.propertyInfo?.roofType || '',
+          houseStorey: snap.propertyInfo?.houseStorey || '',
+          meterPhase: snap.propertyInfo?.meterPhase || '',
+          energyRetailer: snap.utilityInfo?.energyRetailer || '',
+        };
+        localStorage.setItem('xtr_site_visit_prefill', JSON.stringify(prefill));
+        localStorage.setItem('xtr_site_visit_context', JSON.stringify({ leadId: updatedLead.id }));
+      } catch {}
+      try { window.dispatchEvent(new CustomEvent('xtr-nav', { detail: 'site-visit' })); } catch {}
+    }
+
+    // If moved to On-Field Inspection, prefill On-Field assessment
+    if (newStatus === 'on-field-inspection') {
+      try {
+        const snap = (updatedLead as any).projectSnapshot || {};
+        const sv = (updatedLead as any).siteVisit || {};
+        const salesNotesParts: string[] = [];
+        if (sv.siteNotes) salesNotesParts.push(`• ${sv.siteNotes}`);
+        if (sv.specialRequirements) salesNotesParts.push(`• ${sv.specialRequirements}`);
+        if (sv.nextSteps) salesNotesParts.push(`• ${sv.nextSteps}`);
+        const prefill = {
+          customerName: snap.customerName || updatedLead.title || '',
+          customerEmail: snap.customerEmail || (updatedLead.tags && updatedLead.tags[0]) || '',
+          customerPhone: snap.customerPhone || updatedLead.value || '',
+          propertyAddress: snap.customerAddress || updatedLead.company || '',
+          propertyType: snap.clientType || '',
+          currentEnergyProvider: snap.utilityInfo?.energyRetailer || sv.currentEnergyProvider || '',
+          energyDistributor: snap.utilityInfo?.distributor || sv.energyDistributor || '',
+          averageMonthlyBill: snap.siteVisitInfo?.averageMonthlyBill || sv.averageMonthlyBill || '',
+          roofOrientation: snap.siteVisitInfo?.roofOrientation || sv.roofOrientation || '',
+          roofType: snap.propertyInfo?.roofType || '',
+          meterPhase: snap.propertyInfo?.meterPhase || '',
+          numberOfStory: snap.propertyInfo?.houseStorey || '',
+          shadingAssessment: snap.siteVisitInfo?.shadingAssessment || (Array.isArray(sv.shadingAssessment) ? sv.shadingAssessment : []),
+          primaryMotivation: snap.siteVisitInfo?.primaryMotivation || (Array.isArray(sv.primaryMotivation) ? sv.primaryMotivation : []),
+          existingSolarInstallations: snap.siteVisitInfo?.existingSolarInstallations || sv.existingSolarInstallations || '',
+          interestLevel: snap.siteVisitInfo?.interestLevel || sv.interestLevel || '',
+          salesNotes: salesNotesParts.join('\n'),
+        };
+        localStorage.setItem('xtr_onfield_prefill', JSON.stringify(prefill));
+        localStorage.setItem('xtr_onfield_context', JSON.stringify({ leadId: updatedLead.id }));
+      } catch {}
+      // navigation left to user role (on-field techs)
+    }
+    // Close details dialog after saving status
+    try { handleCloseModal(); } catch {}
   };
 
   const filteredColumns = columns.map(column => ({
@@ -659,10 +1233,6 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
             </Select>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm">
-            <Mail className="w-4 h-4 mr-2" />
-            Bulk Email
-          </Button>
           <Button size="sm" onClick={() => setShowNewLead(true)}>
             <Plus className="w-4 h-4 mr-2" />
             New Lead
@@ -795,47 +1365,487 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
               {/* Lead Information */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Company</Label>
-                  <p className="text-sm">{selectedLead.company}</p>
+                  <Label>Customer Name</Label>
+                  <p className="text-sm">{selectedLead.title}</p>
                 </div>
                 <div>
-                  <Label>Value</Label>
-                  <p className="text-sm">{selectedLead.value}</p>
+                  <Label>Status</Label>
+                  <Select value={pendingStatus} onValueChange={(v) => setPendingStatus(v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new">New</SelectItem>
+                      <SelectItem value="contacted">Contacted</SelectItem>
+                      <SelectItem value="qualified">Qualified</SelectItem>
+                      <SelectItem value="sales-site-visit">Sales Site Visit</SelectItem>
+                      <SelectItem value="on-field-inspection">On-Field Inspection</SelectItem>
+                      <SelectItem value="proposal">Proposal Sent</SelectItem>
+                      <SelectItem value="negotiation">Negotiation</SelectItem>
+                      <SelectItem value="closed-won">Closed Won</SelectItem>
+                      <SelectItem value="closed-lost">Closed Lost</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>On-Field Inspection Status</Label>
+                  <p className="text-sm capitalize">{
+                    (()=>{
+                      const leadAny: any = selectedLead as any;
+                      let status = leadAny?.onFieldStatus;
+                      if (status !== 'completed') {
+                        // infer completion if an on-field assessment exists for this lead
+                        try {
+                          const raw = localStorage.getItem('xtr_onfield_assessments');
+                          const arr = raw ? JSON.parse(raw) : [];
+                          const name = leadAny?.projectSnapshot?.customerName || leadAny?.title;
+                          const addr = leadAny?.projectSnapshot?.customerAddress || leadAny?.company;
+                          const matchLocal = Array.isArray(arr) && arr.some((v: any) => (
+                            (!name || v.customerName === name) && (!addr || v.propertyAddress === addr)
+                          ));
+                          if (matchLocal) status = 'completed';
+                        } catch {}
+                        if (!status && Array.isArray(onFieldFs) && onFieldFs.length > 0) {
+                          try {
+                            const name = leadAny?.projectSnapshot?.customerName || leadAny?.title;
+                            const addr = leadAny?.projectSnapshot?.customerAddress || leadAny?.company;
+                            const matchFs = onFieldFs.some((v: any) => (
+                              (!name || v.customerName === name) && (!addr || v.propertyAddress === addr)
+                            ));
+                            if (matchFs) status = 'completed';
+                          } catch {}
+                        }
+                      }
+                      return status || '-';
+                    })()
+                  }</p>
                 </div>
                 <div>
                   <Label>Date</Label>
                   <p className="text-sm">{selectedLead.date}</p>
                 </div>
+              </div>
+
+              {/* Customer Email (renamed from Tags) */}
                 <div>
-                  <Label>Priority</Label>
-                  <Badge
-                    variant={
-                      selectedLead.priority === "high"
-                        ? "destructive"
-                        : selectedLead.priority === "medium"
-                        ? "default"
-                        : "secondary"
+                <Label>Customer Email</Label>
+                <p className="text-sm">{selectedLead.tags?.[0] || '-'}</p>
+              </div>
+
+              
+
+              {/* Project Details or Action */}
+              <div className="pt-4 border-t">
+                {(pendingStatus || (selectedLead as any)?.status) !== 'new' && selectedLead.projectSnapshot ? (
+                  <div className="space-y-4">
+                    <h4 className="font-semibold">Project Details</h4>
+                    {/* Basics */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-medium">Project Details</div>
+                      <Button size="sm" variant="outline" onClick={handleEditProject}>Edit Project</Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <Label>Title</Label>
+                        <p>{selectedLead.projectSnapshot.title || '-'}</p>
+                      </div>
+                      
+                      <div>
+                        <Label>Project Code</Label>
+                        <p>{selectedLead.projectSnapshot.projectCode || '-'}</p>
+                      </div>
+                      <div>
+                        <Label>Start Date</Label>
+                        <p>{selectedLead.projectSnapshot.startDate || '-'}</p>
+                      </div>
+                      <div>
+                        <Label>Price (AUD)</Label>
+                        <p>{selectedLead.projectSnapshot.price || '-'}</p>
+                      </div>
+                      <div>
+                        <Label>Notes</Label>
+                        <p className="whitespace-pre-wrap break-words">{selectedLead.projectSnapshot.notes || '-'}</p>
+                      </div>
+                    </div>
+
+                    {/* Customer */}
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <Label>Client Type</Label>
+                        <p className="capitalize">{selectedLead.projectSnapshot.clientType || '-'}</p>
+                      </div>
+                      <div>
+                        <Label>Customer Name</Label>
+                        <p>{selectedLead.projectSnapshot.customerName || '-'}</p>
+                      </div>
+                      <div>
+                        <Label>Customer Email</Label>
+                        <p>{selectedLead.projectSnapshot.customerEmail || '-'}</p>
+                      </div>
+                      <div>
+                        <Label>Customer Contact</Label>
+                        <p>{selectedLead.projectSnapshot.customerPhone || '-'}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <Label>Customer Address</Label>
+                        <p>{selectedLead.projectSnapshot.customerAddress || '-'}</p>
+                      </div>
+                    </div>
+
+                    {/* System Information */}
+                    <div>
+                      <p className="font-medium mb-2">System Information</p>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <Label>System Type</Label>
+                          <p>{selectedLead.projectSnapshot.systemType || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>System Size (kW)</Label>
+                          <p>{selectedLead.projectSnapshot.systemInfo?.systemSize || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Inverter Brand</Label>
+                          <p>{selectedLead.projectSnapshot.systemInfo?.inverterBrand || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Inverter Size (kW)</Label>
+                          <p>{selectedLead.projectSnapshot.systemInfo?.inverterSize || '-'}</p>
+                        </div>
+                        
+                        <div>
+                          <Label>Panel Brand</Label>
+                          <p>{selectedLead.projectSnapshot.systemInfo?.panelBrand || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Panel Module (Watts)</Label>
+                          <p>{selectedLead.projectSnapshot.systemInfo?.panelModuleWatts || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Battery Size (kWh)</Label>
+                          <p>{selectedLead.projectSnapshot.systemInfo?.batterySize || '-'}</p>
+                        </div>
+                        
+                      </div>
+                    </div>
+
+                    {/* Property Information */}
+                    <div>
+                      <p className="font-medium mb-2">Property Information</p>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <Label>House Storey</Label>
+                          <p>{selectedLead.projectSnapshot.propertyInfo?.houseStorey || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Roof Type</Label>
+                          <p>{selectedLead.projectSnapshot.propertyInfo?.roofType || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Meter Phase</Label>
+                          <p>{selectedLead.projectSnapshot.propertyInfo?.meterPhase || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Access To 2nd Storey</Label>
+                          <p>{selectedLead.projectSnapshot.propertyInfo?.accessSecondStorey || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Access To Inverter</Label>
+                          <p>{selectedLead.projectSnapshot.propertyInfo?.accessToInverter || '-'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Utility Information */}
+                    <div>
+                      <p className="font-medium mb-2">Utility Information</p>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <Label>Pre-Approval Reference Number</Label>
+                          <p>{selectedLead.projectSnapshot.utilityInfo?.preApprovalNumber || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Energy Distributor</Label>
+                          <p>{selectedLead.projectSnapshot.utilityInfo?.distributor || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>NMI Number</Label>
+                          <p>{selectedLead.projectSnapshot.utilityInfo?.nmiNumber || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Meter Number</Label>
+                          <p>{selectedLead.projectSnapshot.utilityInfo?.meterNumber || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Energy Retailer</Label>
+                          <p>{selectedLead.projectSnapshot.utilityInfo?.energyRetailer || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Solar Victoria Eligibility</Label>
+                          <p className="capitalize">{selectedLead.projectSnapshot.utilityInfo?.solarVictoriaEligible || '-'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                  {/* Sales Site Visit (if available) */}
+                  { (() => {
+                    const leadAny: any = selectedLead as any;
+                    let siteVisitData = leadAny?.siteVisit;
+                    if (!siteVisitData) {
+                      try {
+                        const raw = localStorage.getItem('xtr_site_visits');
+                        const arr = raw ? JSON.parse(raw) : [];
+                        if (Array.isArray(arr)) {
+                          const name = leadAny?.projectSnapshot?.customerName || leadAny?.title;
+                          const addr = leadAny?.projectSnapshot?.customerAddress || leadAny?.company;
+                          const matches = arr.filter((v: any) => (
+                            (!name || v.customerName === name) && (!addr || v.propertyAddress === addr)
+                          ));
+                          if (matches.length > 0) {
+                            matches.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                            siteVisitData = matches[0];
+                          }
+                        }
+                      } catch {}
+                      // Firestore fallback for teammates/devices without local storage
+                      if (!siteVisitData && Array.isArray(salesVisitsFs) && salesVisitsFs.length > 0) {
+                        try {
+                          const name = leadAny?.projectSnapshot?.customerName || leadAny?.title;
+                          const addr = leadAny?.projectSnapshot?.customerAddress || leadAny?.company;
+                          const matchesFs = salesVisitsFs.filter((v: any) => (
+                            (!name || v.customerName === name) && (!addr || v.propertyAddress === addr)
+                          ));
+                          if (matchesFs.length > 0) {
+                            matchesFs.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                            siteVisitData = matchesFs[0];
+                          }
+                        } catch {}
+                      }
                     }
-                  >
-                    {selectedLead.priority}
-                  </Badge>
+                    return siteVisitData ? (
+                    <div className="p-3 border rounded-lg">
+                      <p className="font-medium mb-2">Sales Site Visit Information</p>
+                      {/* Basic details not already covered in Project Details */}
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <Label>Sales Person</Label>
+                          <p>{siteVisitData.salesPersonName || siteVisitData.salesPersonEmail || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Date of Visit</Label>
+                          <p>{siteVisitData.dateOfVisit || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Energy Retailer</Label>
+                          <p>{siteVisitData.currentEnergyProvider || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Average Monthly Bill</Label>
+                          <p>{siteVisitData.averageMonthlyBill || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Roof Orientation</Label>
+                          <p className="capitalize">{siteVisitData.roofOrientation || '-'}</p>
                 </div>
               </div>
 
-              {/* Tags */}
+                      {/* Additional assessments */}
+                      <div className="grid grid-cols-2 gap-3 text-sm mt-3">
+                        <div className="col-span-2">
+                          <Label>Shading Assessment</Label>
+                          <p>{Array.isArray(siteVisitData.shadingAssessment) && siteVisitData.shadingAssessment.length > 0 ? siteVisitData.shadingAssessment.join(', ') : '-'}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <Label>Primary Motivation</Label>
+                          <p>{Array.isArray(siteVisitData.primaryMotivation) && siteVisitData.primaryMotivation.length > 0 ? siteVisitData.primaryMotivation.join(', ') : '-'}</p>
+                        </div>
               <div>
-                <Label>Tags</Label>
-                <div className="flex gap-2 mt-1">
-                  {selectedLead.tags.map((tag) => (
-                    <Badge key={tag} variant="outline">
-                      {tag}
-                    </Badge>
-                  ))}
+                          <Label>Existing Solar Installations</Label>
+                          <p className="capitalize">{siteVisitData.existingSolarInstallations || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Interest Level</Label>
+                          <p>{siteVisitData.interestLevel || '-'}</p>
                 </div>
               </div>
 
-              {/* Comments Section */}
-              <div className="space-y-4">
+                      {/* Notes & scheduling */}
+                      <div className="space-y-2 mt-3 text-sm">
+                        <div>
+                          <Label>Site Notes</Label>
+                          <p>{siteVisitData.siteNotes || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Special Requirements</Label>
+                          <p>{siteVisitData.specialRequirements || '-'}</p>
+                        </div>
+                        <div>
+                          <Label>Next Steps</Label>
+                          <p>{siteVisitData.nextSteps || '-'}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label>Electrician Visit Date</Label>
+                            <p>{siteVisitData.electricianVisitDate || '-'}</p>
+                          </div>
+                          <div>
+                            <Label>Electrician Visit Time</Label>
+                            <p>{siteVisitData.electricianVisitTime || '-'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <Label>Notes for Electrician</Label>
+                            <p>{siteVisitData.electricianNotes || '-'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    ) : null;
+                  })()}
+
+                  {/* On-Field Site Assessment (if available) */}
+                  { (() => {
+                    const leadAny: any = selectedLead as any;
+                    let onField = leadAny?.onField;
+                    if (!onField) {
+                      try {
+                        const raw = localStorage.getItem('xtr_onfield_assessments');
+                        const arr = raw ? JSON.parse(raw) : [];
+                        if (Array.isArray(arr)) {
+                          const name = leadAny?.projectSnapshot?.customerName || leadAny?.title;
+                          const addr = leadAny?.projectSnapshot?.customerAddress || leadAny?.company;
+                          const matches = arr.filter((v: any) => (
+                            (!name || v.customerName === name) && (!addr || v.propertyAddress === addr)
+                          ));
+                          if (matches.length > 0) {
+                            matches.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                            onField = matches[0];
+                          }
+                        }
+                      } catch {}
+                      if (!onField && Array.isArray(onFieldFs) && onFieldFs.length > 0) {
+                        try {
+                          const name = leadAny?.projectSnapshot?.customerName || leadAny?.title;
+                          const addr = leadAny?.projectSnapshot?.customerAddress || leadAny?.company;
+                          const matchesFs = onFieldFs.filter((v: any) => (
+                            (!name || v.customerName === name) && (!addr || v.propertyAddress === addr)
+                          ));
+                          if (matchesFs.length > 0) {
+                            matchesFs.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                            onField = matchesFs[0];
+                          }
+                        } catch {}
+                      }
+                    }
+                    return onField ? (
+                      <div className="p-3 border rounded-lg mt-3">
+                        <p className="font-medium mb-2">On-Field Assessment</p>
+                        {/* Show only details not already in Project Details or Sales Site Visit */}
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <Label>Visit Date</Label>
+                            <p>{onField.visitDate || '-'}</p>
+                          </div>
+                          <div>
+                            <Label>Visit Time</Label>
+                            <p>{onField.visitTime || '-'}</p>
+                          </div>
+                          <div>
+                            <Label>Technician</Label>
+                            <p>{onField.technicianName || '-'}</p>
+                          </div>
+                          <div>
+                            <Label>Weather</Label>
+                            <p>{onField.weatherConditions || '-'}</p>
+                          </div>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                          <div className="col-span-2">
+                            <Label>Electrical Hazards</Label>
+                            <p>{Array.isArray(onField.electricalHazards) && onField.electricalHazards.length > 0 ? onField.electricalHazards.join(', ') : '-'}</p>
+                          </div>
+                          <div>
+                            <Label>Main Panel Location</Label>
+                            <p>{onField.mainPanelLocation || '-'}</p>
+                          </div>
+                          <div>
+                            <Label>Panel Condition</Label>
+                            <p className="capitalize">{onField.panelCondition || '-'}</p>
+                          </div>
+                          <div>
+                            <Label>Available Amperage</Label>
+                            <p>{onField.availableAmperage || '-'}</p>
+                          </div>
+                          <div>
+                            <Label>Grounding System</Label>
+                            <p className="capitalize">{onField.groundingSystem || '-'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <Label>Electrical Notes</Label>
+                            <p>{onField.electricalNotes || '-'}</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <Label>Roof Condition</Label>
+                            <p className="capitalize">{onField.roofCondition || '-'}</p>
+                          </div>
+                          <div>
+                            <Label>Roof Access</Label>
+                            <p className="capitalize">{onField.roofAccess || '-'}</p>
+                          </div>
+                          <div>
+                            <Label>Structural Integrity</Label>
+                            <p className="capitalize">{onField.structuralIntegrity || '-'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <Label>Mounting Points</Label>
+                            <p>{Array.isArray(onField.mountingPoints) && onField.mountingPoints.length > 0 ? onField.mountingPoints.join(', ') : '-'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <Label>Roof Hazards</Label>
+                            <p>{Array.isArray(onField.roofHazards) && onField.roofHazards.length > 0 ? onField.roofHazards.join(', ') : '-'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <Label>Roof Notes</Label>
+                            <p>{onField.roofNotes || '-'}</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <Label>Panel Count</Label>
+                            <p>{onField.panelCount || '-'}</p>
+                          </div>
+                          <div>
+                            <Label>Inverter Location</Label>
+                            <p>{onField.inverterLocation || '-'}</p>
+                          </div>
+                          <div>
+                            <Label>Conduit Path</Label>
+                            <p>{onField.conduitPath || '-'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <Label>Special Requirements</Label>
+                            <p>{onField.specialRequirements || '-'}</p>
+                          </div>
+                        </div>
+
+                      </div>
+                    ) : null;
+                  })()}
+                    
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button onClick={handleCreateProject} className="flex-1">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Project from Lead
+                    </Button>
+                  </div>
+                )}
+                {/* Comments Section (moved below Project Details) */}
+                <div className="space-y-4 mt-6">
                 <div className="flex items-center justify-between">
                   <Label>Comments</Label>
                   <Button
@@ -909,16 +1919,10 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
                   )}
                 </div>
               </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-2 pt-4 border-t">
-                <Button onClick={handleCreateProject} className="flex-1">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Project from Lead
-                </Button>
-                <Button variant="outline" onClick={handleCloseModal}>
-                  Close
-                </Button>
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button onClick={() => handleInlineStatusChange(pendingStatus)}>Save</Button>
+                  <Button variant="outline" onClick={handleCloseModal}>Close</Button>
+                </div>
               </div>
             </div>
           )}
@@ -1038,6 +2042,8 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
               <div className="p-3 border rounded-lg bg-muted/50">
                 <p className="font-medium mb-3">System Information</p>
                 <div className="grid grid-cols-2 gap-3">
+                  {(projectForm.systemType === "pv-only" || projectForm.systemType === "pv-battery" || projectForm.systemType === "pv-battery-ev" || projectForm.systemType === "pv-ev") && (
+                    <>
                   <div>
                     <Label>System Size (kW)</Label>
                     <Input 
@@ -1048,37 +2054,51 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
                       step="0.1"
                     />
                   </div>
+                      
                   <div>
-                    <Label>Panel Type</Label>
-                    <Select value={projectForm.panelType} onValueChange={(v) => setProjectForm({ ...projectForm, panelType: v })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Panel Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="monocrystalline">Monocrystalline</SelectItem>
-                        <SelectItem value="polycrystalline">Polycrystalline</SelectItem>
-                        <SelectItem value="thin-film">Thin-Film</SelectItem>
-                        <SelectItem value="bifacial">Bifacial</SelectItem>
-                      </SelectContent>
-                    </Select>
+                        <Label>Panel Brand</Label>
+                        <Input 
+                          value={projectForm.panelBrand}
+                          onChange={(e) => setProjectForm({ ...projectForm, panelBrand: e.target.value })}
+                          placeholder="e.g., Jinko, Longi"
+                        />
                   </div>
+                      <div>
+                        <Label>Panel Module (Watts)</Label>
+                        <Input 
+                          type="number"
+                          step="1"
+                          value={projectForm.panelModuleWatts}
+                          onChange={(e) => setProjectForm({ ...projectForm, panelModuleWatts: e.target.value })}
+                          placeholder="e.g., 415"
+                        />
+                      </div>
+                    </>
+                  )}
                   {(projectForm.systemType === "pv-only" || projectForm.systemType === "pv-battery" || projectForm.systemType === "pv-battery-ev" || projectForm.systemType === "pv-ev") && (
+                    <>
                     <div>
-                      <Label>Inverter Type</Label>
-                      <Select value={projectForm.inverterType} onValueChange={(v) => setProjectForm({ ...projectForm, inverterType: v })}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Inverter Type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="string-inverter">String Inverter</SelectItem>
-                          <SelectItem value="micro-inverter">Micro Inverter</SelectItem>
-                          <SelectItem value="central-inverter">Central Inverter</SelectItem>
-                          <SelectItem value="hybrid-inverter">Hybrid Inverter</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        <Label>Inverter Brand</Label>
+                        <Input 
+                          value={projectForm.inverterBrand}
+                          onChange={(e) => setProjectForm({ ...projectForm, inverterBrand: e.target.value })}
+                          placeholder="e.g., Fronius, Sungrow"
+                        />
                     </div>
+                      <div>
+                        <Label>Inverter Size (kW)</Label>
+                        <Input 
+                          type="number" 
+                          step="0.1"
+                          value={projectForm.inverterSize}
+                          onChange={(e) => setProjectForm({ ...projectForm, inverterSize: e.target.value })}
+                          placeholder="e.g., 5"
+                        />
+                      </div>
+                    </>
                   )}
                   {(projectForm.systemType === "battery-only" || projectForm.systemType === "pv-battery" || projectForm.systemType === "pv-battery-ev" || projectForm.systemType === "battery-ev") && (
+                    <>
                     <div>
                       <Label>Battery Size (kWh)</Label>
                       <Input 
@@ -1089,21 +2109,46 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
                         step="0.1"
                       />
                     </div>
-                  )}
                   <div>
-                    <Label>Mounting Type</Label>
-                    <Select value={projectForm.mountingType} onValueChange={(v) => setProjectForm({ ...projectForm, mountingType: v })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Mounting Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="roof-mounted">Roof Mounted</SelectItem>
-                        <SelectItem value="ground-mounted">Ground Mounted</SelectItem>
-                        <SelectItem value="pole-mounted">Pole Mounted</SelectItem>
-                        <SelectItem value="tracking-system">Tracking System</SelectItem>
-                      </SelectContent>
-                    </Select>
+                        <Label>Battery Brand</Label>
+                        <Input 
+                          value={projectForm.batteryBrand}
+                          onChange={(e) => setProjectForm({ ...projectForm, batteryBrand: e.target.value })}
+                          placeholder="e.g., Tesla, Sungrow"
+                        />
                   </div>
+                      <div>
+                        <Label>Battery Model</Label>
+                        <Input 
+                          value={projectForm.batteryModel}
+                          onChange={(e) => setProjectForm({ ...projectForm, batteryModel: e.target.value })}
+                          placeholder="e.g., Powerwall 2"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {(projectForm.systemType === "ev-only" || projectForm.systemType === "pv-battery-ev" || projectForm.systemType === "battery-ev" || projectForm.systemType === "pv-ev") && (
+                    <>
+                  <div>
+                        <Label>EV Charger Brand</Label>
+                        <Input 
+                          value={projectForm.evChargerBrand}
+                          onChange={(e) => setProjectForm({ ...projectForm, evChargerBrand: e.target.value })}
+                          placeholder="e.g., Tesla, Wallbox, Zappi"
+                        />
+                  </div>
+                      <div>
+                        <Label>EV Charger Model</Label>
+                        <Input 
+                          value={projectForm.evChargerModel}
+                          onChange={(e) => setProjectForm({ ...projectForm, evChargerModel: e.target.value })}
+                          placeholder="e.g., Gen 3 Wall Connector"
+                        />
+                      </div>
+                    </>
+                  )}
+                  
                 </div>
               </div>
             )}
@@ -1164,7 +2209,7 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
             </div>
             
 
-            {/* Property Information & Additional Information */}
+            {/* Property Information */}
             <div className="grid grid-cols-2 gap-4 pt-2">
               <div className="p-3 border rounded-lg">
                 <p className="font-medium mb-2">Property Information</p>
@@ -1196,14 +2241,25 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
                         <SelectValue placeholder="Select Roof Type" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="colorbond">ColorBond</SelectItem>
-                        <SelectItem value="tin-kliplock">Tin KlipLock</SelectItem>
-                        <SelectItem value="tin-kliplock-tily">Tin KlipLock+Tily</SelectItem>
-                        <SelectItem value="tile-terracotta">Tile Terracotta</SelectItem>
-                        <SelectItem value="tile-concrete">Tile Concrete</SelectItem>
-                        <SelectItem value="tile-shilung-terracotta">Tile Shilung+Terracotta</SelectItem>
-                        <SelectItem value="concrete">Concrete</SelectItem>
-                        <SelectItem value="na">NA</SelectItem>
+                        <SelectItem value="tin-colorbond">Tin (Colorbond)</SelectItem>
+                        <SelectItem value="tin-kliplock">Tin (Kliplock)</SelectItem>
+                        <SelectItem value="tile-concrete">Tile (Concrete)</SelectItem>
+                        <SelectItem value="tile-terracotta">Tile (Terracotta)</SelectItem>
+                        <SelectItem value="flat">Flat</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Meter Phase</Label>
+                    <Select value={projectForm.meterPhase} onValueChange={(v) => setProjectForm({ ...projectForm, meterPhase: v })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Meter Phase" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="single">Single</SelectItem>
+                        <SelectItem value="double">Double</SelectItem>
+                        <SelectItem value="three">Three</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1227,20 +2283,47 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
                         <SelectValue placeholder="Select Access" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="full">Full</SelectItem>
-                        <SelectItem value="partial">Partial</SelectItem>
-                        <SelectItem value="none">No</SelectItem>
+                        <SelectItem value="yes">Yes</SelectItem>
+                        <SelectItem value="no-access-required">No Access Required</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
               </div>
+              
+            </div>
+
+            {/* Utility Information */}
+            <div className="grid grid-cols-1 gap-4 pt-2">
               <div className="p-3 border rounded-lg">
-                <p className="font-medium mb-2">Additional Information</p>
+                <p className="font-medium mb-2">Utility Information</p>
                 <div className="space-y-3">
                   <div>
-                    <Label>Monitoring</Label>
-                    <Select value={projectForm.monitoring} onValueChange={(v) => setProjectForm({ ...projectForm, monitoring: v })}>
+                    <Label>Pre-Approval Reference Number</Label>
+                    <Input value={projectForm.preApprovalNumber} onChange={(e) => setProjectForm({ ...projectForm, preApprovalNumber: e.target.value })} placeholder="Pre-Approval Reference Number" />
+                  </div>
+                  <div>
+                    <Label>Energy Retailer</Label>
+                    <Input value={projectForm.energyRetailer} onChange={(e) => setProjectForm({ ...projectForm, energyRetailer: e.target.value })} placeholder="e.g., AGL, Origin" />
+                  </div>
+                  <div>
+                    <Label>Energy Distributor</Label>
+                    <Select value={projectForm.distributor} onValueChange={(v) => setProjectForm({ ...projectForm, distributor: v })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Distributor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="AusNet">AusNet</SelectItem>
+                        <SelectItem value="PowerCor">PowerCor</SelectItem>
+                        <SelectItem value="CitiPower">CitiPower</SelectItem>
+                        <SelectItem value="United Energy">United Energy</SelectItem>
+                        <SelectItem value="Jemena">Jemena</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Solar Victoria Eligibility</Label>
+                    <Select value={projectForm.solarVictoriaEligible} onValueChange={(v) => setProjectForm({ ...projectForm, solarVictoriaEligible: v })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
@@ -1249,66 +2332,10 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
                         <SelectItem value="no">No</SelectItem>
                       </SelectContent>
                     </Select>
-                    {projectForm.monitoring === 'yes' && (
-                      <div className="mt-2">
-                        <Label>How Much?</Label>
-                        <Textarea rows={2} value={projectForm.monitoringAmount} onChange={(e) => setProjectForm({ ...projectForm, monitoringAmount: e.target.value })} placeholder="Enter amount/details" />
-                      </div>
-                    )}
                   </div>
                   <div>
-                    <Label>STC's Processed Using Which Portal?</Label>
-                    <Input value={projectForm.stcPortal} onChange={(e) => setProjectForm({ ...projectForm, stcPortal: e.target.value })} placeholder="Portal name" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Team Assignment & Utility Information */}
-            <div className="grid grid-cols-2 gap-4 pt-2">
-              <div className="p-3 border rounded-lg">
-                <p className="font-medium mb-2">Team Assignment</p>
-                <div className="space-y-3">
-                  <ResourceMultiSelect
-                    label="Sales Representative"
-                    value={projectForm.salesRep}
-                    onChange={(next) => setProjectForm({ ...projectForm, salesRep: next })}
-                    placeholder={resourceNames.length ? "Select Sales Rep" : "No resources found"}
-                    options={resourceNames}
-                  />
-                  <ResourceMultiSelect
-                    label="Project Manager"
-                    value={projectForm.projectManager}
-                    onChange={(next) => setProjectForm({ ...projectForm, projectManager: next })}
-                    placeholder={resourceNames.length ? "Select Project Manager" : "No resources found"}
-                    options={resourceNames}
-                  />
-                  <ResourceMultiSelect
-                    label="Lead Electrician"
-                    value={projectForm.leadElectrician}
-                    onChange={(next) => setProjectForm({ ...projectForm, leadElectrician: next })}
-                    placeholder={resourceNames.length ? "Select Lead Electrician" : "No resources found"}
-                    options={resourceNames}
-                  />
-                  <ResourceMultiSelect
-                    label="Apprentice"
-                    value={projectForm.apprentice}
-                    onChange={(next) => setProjectForm({ ...projectForm, apprentice: next })}
-                    placeholder={resourceNames.length ? "Select Apprentice" : "No resources found"}
-                    options={resourceNames}
-                  />
-                </div>
-              </div>
-              <div className="p-3 border rounded-lg">
-                <p className="font-medium mb-2">Utility Information</p>
-                <div className="space-y-3">
-                  <div>
-                    <Label>Pre-Approval Number</Label>
-                    <Input value={projectForm.preApprovalNumber} onChange={(e) => setProjectForm({ ...projectForm, preApprovalNumber: e.target.value })} placeholder="Pre-Approval Number" />
-                  </div>
-                  <div>
-                    <Label>Distributor</Label>
-                    <Input value={projectForm.distributor} onChange={(e) => setProjectForm({ ...projectForm, distributor: e.target.value })} placeholder="e.g., AusNet Services" />
+                    <Label>NMI Number</Label>
+                    <Input value={projectForm.nmiNumber} onChange={(e) => setProjectForm({ ...projectForm, nmiNumber: e.target.value })} placeholder="National Meter Identifier" />
                   </div>
                   <div>
                     <Label>Meter Number</Label>
@@ -1319,7 +2346,7 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
             </div>
           </div>
           <div className="flex gap-2 pt-4">
-            <Button className="flex-1" onClick={handleSubmitProject}>Create Project</Button>
+            <Button className="flex-1" onClick={handleSubmitProject}>{selectedLead?.projectSnapshot ? 'Update Project' : 'Create Project'}</Button>
             <Button variant="outline" className="flex-1" onClick={() => setShowProjectForm(false)}>Cancel</Button>
           </div>
         </DialogContent>
