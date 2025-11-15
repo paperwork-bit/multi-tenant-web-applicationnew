@@ -852,6 +852,8 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
         setDoc(doc(db, 'leads_state', 'columns'), { columns: nextColumns } as any, { merge: true });
       }
     } catch {}
+    // Dispatch event to notify other components (e.g., ProjectManagementScreen)
+    try { window.dispatchEvent(new Event('xtr-leads-updated')); } catch {}
   };
 
   useEffect(() => {

@@ -1247,18 +1247,25 @@ export function ProjectManagementScreen() {
   // Fetch closed-won leads from Lead CRM and add to "New" column
   useEffect(() => {
     const loadClosedWonLeads = () => {
+      console.log('[loadClosedWonLeads] Starting to load closed-won leads');
       try {
         // Get leads from localStorage - check both possible keys
         let leadsStateRaw = localStorage.getItem('xtr_leads_state_columns');
         if (!leadsStateRaw) {
           leadsStateRaw = localStorage.getItem('leads_state');
         }
-        if (!leadsStateRaw) return;
+        if (!leadsStateRaw) {
+          console.log('[loadClosedWonLeads] No leads state found in localStorage');
+          return;
+        }
 
         const leadsData = JSON.parse(leadsStateRaw);
         // Handle both formats: { columns: [...] } or just [...]
         const leadsState = Array.isArray(leadsData) ? leadsData : (leadsData?.columns || []);
-        if (!Array.isArray(leadsState)) return;
+        if (!Array.isArray(leadsState)) {
+          console.log('[loadClosedWonLeads] Leads state is not an array');
+          return;
+        }
 
         // Find all closed-won leads
         const closedWonLeads: any[] = [];
@@ -1267,6 +1274,8 @@ export function ProjectManagementScreen() {
             closedWonLeads.push(...column.leads);
           }
         });
+
+        console.log('[loadClosedWonLeads] Found', closedWonLeads.length, 'closed-won leads:', closedWonLeads.map(l => l.title || l.company));
 
         if (closedWonLeads.length === 0) return;
 
@@ -1295,18 +1304,111 @@ export function ProjectManagementScreen() {
           const newProjects: Project[] = [];
 
           closedWonLeads.forEach((lead: any) => {
-            // Skip if already exists as a project by ID
-            if (existingProjectIds.has(lead.id)) return;
+            const leadTitle = lead.title || lead.company || '';
+            const isTest8 = leadTitle.toLowerCase().includes('test 8') || leadTitle.toLowerCase().includes('test8');
+            
+            if (isTest8) {
+              console.log('[loadClosedWonLeads] Processing Test 8 lead:', {
+                id: lead.id,
+                title: lead.title,
+                company: lead.company,
+                email: lead.tags?.find((t: string) => t.includes('@')),
+                hasProjectSnapshot: !!lead.projectSnapshot,
+                projectSnapshotTitle: lead.projectSnapshot?.title,
+                projectSnapshotCustomerName: lead.projectSnapshot?.customerName
+              });
+            }
+            
+            // Check if already exists as a project by ID - if so, update status to "new" if needed
+            if (existingProjectIds.has(lead.id)) {
+              const existingProject = prev.find((p: Project) => p.id === lead.id);
+              if (existingProject) {
+                // If existing project is not in "new" status, update it to "new"
+                if (existingProject.status !== 'new') {
+                  if (isTest8) {
+                    console.log('[loadClosedWonLeads] Test 8: updating existing project by ID status from', existingProject.status, 'to "new"');
+                  }
+                  const updatedProject = { ...existingProject, status: 'new' as ProjectStatus };
+                  const updatedProjects = prev.map((p: Project) => p.id === existingProject.id ? updatedProject : p);
+                  
+                  // Save updated projects
+                  saveProjectsToStorage(updatedProjects).then(() => {
+                    console.log(`[loadClosedWonLeads] Updated existing project "${existingProject.name}" (ID: ${existingProject.id}) to "new" status from closed-won lead`);
+                  });
+                  
+                  // Return updated projects without creating a new one
+                  return updatedProjects;
+                } else {
+                  // Already in "new" status, skip
+                  if (isTest8) {
+                    console.log('[loadClosedWonLeads] Test 8 skipped: already exists as project by ID with status "new":', lead.id);
+                  }
+                  return prev;
+                }
+              }
+              
+              // If ID exists but project not found, skip
+              if (isTest8) {
+                console.log('[loadClosedWonLeads] Test 8 skipped: ID exists but project not found:', lead.id);
+              }
+              return prev;
+            }
             
             // Also check by name + email/address combination
-            const leadName = (lead.title || lead.company || '').toLowerCase().trim();
+            const leadName = leadTitle.toLowerCase().trim();
             const leadEmail = (lead.tags?.find((t: string) => t.includes('@')) || '').toLowerCase().trim();
             const leadAddr = (lead.company || lead.projectDetails?.propertyInfo?.propertyAddress || '').toLowerCase().trim();
             const leadKey = `${leadName}|${leadEmail}|${leadAddr}`;
             
+            // If duplicate found, find existing project and update its status to "new" if needed
             if (leadKey && leadKey !== '||' && existingCombinations.has(leadKey)) {
-              console.log('Skipping duplicate lead:', lead.title || lead.company);
-              return;
+              // Find the existing project with this combination
+              const existingProject = prev.find((p: Project) => {
+                const projName = (p.name || '').toLowerCase().trim();
+                const projEmail = (p.projectDetails?.additionalInfo?.customerEmail || 
+                                  p.projectSnapshot?.customerEmail || 
+                                  p.leadData?.tags?.find((t: string) => t.includes('@')) || 
+                                  '').toLowerCase().trim();
+                const projAddr = (p.projectDetails?.additionalInfo?.customerAddress || 
+                                p.projectSnapshot?.customerAddress || 
+                                p.leadData?.company || 
+                                '').toLowerCase().trim();
+                const projKey = `${projName}|${projEmail}|${projAddr}`;
+                return projKey === leadKey;
+              });
+              
+              if (existingProject) {
+                // If existing project is not in "new" status, update it to "new"
+                if (existingProject.status !== 'new') {
+                  if (isTest8) {
+                    console.log('[loadClosedWonLeads] Test 8: updating existing project status from', existingProject.status, 'to "new"');
+                  }
+                  const updatedProject = { ...existingProject, status: 'new' as ProjectStatus };
+                  const updatedProjects = prev.map((p: Project) => p.id === existingProject.id ? updatedProject : p);
+                  
+                  // Save updated projects
+                  saveProjectsToStorage(updatedProjects).then(() => {
+                    console.log(`[loadClosedWonLeads] Updated existing project "${existingProject.name}" to "new" status from closed-won lead`);
+                  });
+                  
+                  // Return updated projects without creating a new one
+                  return updatedProjects;
+                } else {
+                  // Already in "new" status, skip
+                  if (isTest8) {
+                    console.log('[loadClosedWonLeads] Test 8 skipped: already exists with status "new"');
+                  }
+                  return prev;
+                }
+              }
+              
+              // If we couldn't find the existing project but key exists, skip
+              if (isTest8) {
+                console.log('[loadClosedWonLeads] Test 8 skipped: duplicate combination but project not found:', leadKey);
+              } else {
+                console.log('Skipping duplicate lead:', lead.title || lead.company);
+              }
+              return prev;
             }
 
             // Get site visit data - check multiple sources
@@ -1415,8 +1517,16 @@ export function ProjectManagementScreen() {
             // Get project name - ensure it's valid
             const projectName = snap.title || lead.title || lead.company || snap.customerName || '';
             if (!projectName || projectName.trim() === '' || projectName.trim().length < 2) {
-              console.log('Skipping lead with invalid name:', lead.id, lead.title, lead.company);
+              if (isTest8) {
+                console.log('[loadClosedWonLeads] Test 8 skipped: invalid name:', { id: lead.id, title: lead.title, company: lead.company, projectName });
+              } else {
+                console.log('Skipping lead with invalid name:', lead.id, lead.title, lead.company);
+              }
               return;
+            }
+            
+            if (isTest8) {
+              console.log('[loadClosedWonLeads] Test 8 creating project with name:', projectName.trim());
             }
             
             const project: Project = {
@@ -1490,6 +1600,15 @@ export function ProjectManagementScreen() {
             const projKey = `${projName}|${projEmail}|${projAddr}`;
             if (projKey && projKey !== '||') {
               existingCombinations.add(projKey);
+            }
+            
+            if (isTest8) {
+              console.log('[loadClosedWonLeads] Test 8 project created:', {
+                id: project.id,
+                name: project.name,
+                status: project.status,
+                isValid: isValidProject(project)
+              });
             }
             
             newProjects.push(project);
@@ -1616,8 +1735,36 @@ export function ProjectManagementScreen() {
   // Helper function to save projects to both localStorage and Firestore
   const saveProjectsToStorage = async (projectsToSave: Project[]) => {
     try {
+      // Check for Test 8 before filtering
+      const test8Before = projectsToSave.find(p => (p.name || '').toLowerCase().includes('test 8') || (p.name || '').toLowerCase().includes('test8'));
+      if (test8Before) {
+        console.log('[saveProjectsToStorage] Test 8 before filtering:', {
+          id: test8Before.id,
+          name: test8Before.name,
+          isValid: isValidProject(test8Before)
+        });
+      }
+      
       // Filter valid projects before saving - remove all invalid/unnamed projects
       const validProjects = projectsToSave.filter(isValidProject);
+      
+      // Check for Test 8 after filtering
+      const test8After = validProjects.find(p => (p.name || '').toLowerCase().includes('test 8') || (p.name || '').toLowerCase().includes('test8'));
+      if (test8After) {
+        console.log('[saveProjectsToStorage] Test 8 after filtering:', {
+          id: test8After.id,
+          name: test8After.name,
+          status: test8After.status
+        });
+      } else if (test8Before) {
+        console.error('[saveProjectsToStorage] Test 8 was filtered out!', {
+          id: test8Before.id,
+          name: test8Before.name,
+          nameLength: (test8Before.name || '').length,
+          hasId: !!test8Before.id,
+          idLength: (test8Before.id || '').trim().length
+        });
+      }
       
       if (validProjects.length < projectsToSave.length) {
         const removedCount = projectsToSave.length - validProjects.length;
