@@ -282,6 +282,19 @@ function App() {
           } as SessionSnapshot;
           storedSessionRef.current = payload;
           try { window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload)); } catch {}
+        } else if (detail === 'subcontractor-site-visit') {
+          setCurrentScreen('subcontractor-site-visit');
+          const now = Date.now();
+          lastActivityRef.current = now;
+          const payload = {
+            userRole,
+            retailerTeam: userRole === 'retailer' ? retailerTeam : null,
+            userEmail,
+            currentScreen: 'subcontractor-site-visit' as Screen,
+            lastActive: now,
+          } as SessionSnapshot;
+          storedSessionRef.current = payload;
+          try { window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload)); } catch {}
         }
       } catch {}
     };

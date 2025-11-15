@@ -76,6 +76,8 @@ const getCalendarItemStyle = (item: Project | SiteVisit): {
   textColor: string; 
   hoverColor: string;
   label: string;
+  module: string; // Add module indicator
+  moduleBadge: string; // Add module badge text
 } => {
   // Check if it's a site visit
   const isSiteVisit = 'electricianVisitDate' in item && !('status' in item);
@@ -88,7 +90,9 @@ const getCalendarItemStyle = (item: Project | SiteVisit): {
       bgColor: 'bg-indigo-50',
       textColor: 'text-indigo-700',
       hoverColor: 'hover:bg-indigo-100',
-      label: 'Electrician Site Visit'
+      label: 'Electrician Site Visit',
+      module: 'Site Visit',
+      moduleBadge: 'SV'
     };
   }
   
@@ -104,7 +108,9 @@ const getCalendarItemStyle = (item: Project | SiteVisit): {
       bgColor: 'bg-blue-50',
       textColor: 'text-blue-700',
       hoverColor: 'hover:bg-blue-100',
-      label: 'In-House: Scheduled'
+      label: 'In-House: Scheduled',
+      module: 'In-House',
+      moduleBadge: 'IH'
     };
   }
   if (status === 'to-be-rescheduled') {
@@ -114,7 +120,9 @@ const getCalendarItemStyle = (item: Project | SiteVisit): {
       bgColor: 'bg-amber-50',
       textColor: 'text-amber-700',
       hoverColor: 'hover:bg-amber-100',
-      label: 'In-House: To Be Rescheduled'
+      label: 'In-House: To Be Rescheduled',
+      module: 'In-House',
+      moduleBadge: 'IH'
     };
   }
   
@@ -126,7 +134,9 @@ const getCalendarItemStyle = (item: Project | SiteVisit): {
       bgColor: 'bg-purple-50',
       textColor: 'text-purple-700',
       hoverColor: 'hover:bg-purple-100',
-      label: 'Retailer: Site Inspection'
+      label: 'Retailer: Site Inspection',
+      module: 'Retailer',
+      moduleBadge: 'R'
     };
   }
   if (status === 'stage-one') {
@@ -136,7 +146,9 @@ const getCalendarItemStyle = (item: Project | SiteVisit): {
       bgColor: 'bg-pink-50',
       textColor: 'text-pink-700',
       hoverColor: 'hover:bg-pink-100',
-      label: 'Retailer: Stage One'
+      label: 'Retailer: Stage One',
+      module: 'Retailer',
+      moduleBadge: 'R'
     };
   }
   if (status === 'stage-two') {
@@ -146,7 +158,9 @@ const getCalendarItemStyle = (item: Project | SiteVisit): {
       bgColor: 'bg-orange-50',
       textColor: 'text-orange-700',
       hoverColor: 'hover:bg-orange-100',
-      label: 'Retailer: Stage Two'
+      label: 'Retailer: Stage Two',
+      module: 'Retailer',
+      moduleBadge: 'R'
     };
   }
   if (status === 'full-system') {
@@ -156,7 +170,9 @@ const getCalendarItemStyle = (item: Project | SiteVisit): {
       bgColor: 'bg-teal-50',
       textColor: 'text-teal-700',
       hoverColor: 'hover:bg-teal-100',
-      label: 'Retailer: Full System'
+      label: 'Retailer: Full System',
+      module: 'Retailer',
+      moduleBadge: 'R'
     };
   }
   if (status === 'retailer-scheduled') {
@@ -166,7 +182,9 @@ const getCalendarItemStyle = (item: Project | SiteVisit): {
       bgColor: 'bg-blue-50',
       textColor: 'text-blue-700',
       hoverColor: 'hover:bg-blue-100',
-      label: 'Retailer: Scheduled'
+      label: 'Retailer: Scheduled',
+      module: 'Retailer',
+      moduleBadge: 'R'
     };
   }
   if (status === 'retailer-to-be-rescheduled') {
@@ -176,7 +194,9 @@ const getCalendarItemStyle = (item: Project | SiteVisit): {
       bgColor: 'bg-amber-50',
       textColor: 'text-amber-700',
       hoverColor: 'hover:bg-amber-100',
-      label: 'Retailer: To Be Rescheduled'
+      label: 'Retailer: To Be Rescheduled',
+      module: 'Retailer',
+      moduleBadge: 'R'
     };
   }
   
@@ -187,7 +207,9 @@ const getCalendarItemStyle = (item: Project | SiteVisit): {
     bgColor: 'bg-gray-50',
     textColor: 'text-gray-700',
     hoverColor: 'hover:bg-gray-100',
-    label: 'Other'
+    label: 'Other',
+    module: 'Other',
+    moduleBadge: '?'
   };
 };
 
@@ -532,6 +554,62 @@ export function OnFieldCalendarScreen() {
                       status === "retailer-scheduled" || 
                       status === "retailer-to-be-rescheduled";
     
+    // Special handling for retailer site inspection - redirect to retailer site visit page
+    if (status === "site-inspection") {
+      console.log('Retailer site inspection project clicked:', project);
+      try {
+        // Extract project details for pre-population
+        const snap = project.projectSnapshot || {};
+        const projectDetails = project.projectDetails || {};
+        const additionalInfo = projectDetails.additionalInfo || {};
+        const systemInfo = projectDetails.systemInfo || {};
+        const propertyInfo = projectDetails.propertyInfo || {};
+        
+        const prefill = {
+          // Customer Information
+          customerName: snap.customerName || additionalInfo.customerName || project.name || '',
+          customerEmail: snap.customerEmail || additionalInfo.customerEmail || '',
+          customerPhone: snap.customerPhone || additionalInfo.customerContact || '',
+          customerAddress: snap.customerAddress || additionalInfo.customerAddress || '',
+          location: snap.location || additionalInfo.location || '',
+          clientType: projectDetails.clientType || snap.clientType || '',
+          clientName: additionalInfo.clientName || snap.clientName || '',
+          jobType: additionalInfo.jobType || '',
+          siteInspectionDate: additionalInfo.siteInspection?.date || project.siteVisit?.electricianVisitDate || '',
+          siteInspectionTime: additionalInfo.siteInspection?.time || project.siteVisit?.electricianVisitTime || '',
+          priceAud: additionalInfo.priceAud || project.cost || '',
+          
+          // System Information
+          systemSizeKw: systemInfo.systemSize || project.systemSize || '',
+          inverterSizeKw: systemInfo.inverterSize || '',
+          inverterBrand: systemInfo.inverterBrand || '',
+          inverterType: systemInfo.inverterType || '',
+          panelBrand: systemInfo.panelBrand || '',
+          panelModuleWatts: systemInfo.panelModuleWatts || '',
+          
+          // Property Information
+          houseStorey: propertyInfo.houseStorey || snap.numberOfStory || '',
+          roofType: propertyInfo.roofType || snap.roofType || '',
+          accessSecondStorey: propertyInfo.accessSecondStorey || '',
+          accessToInverter: propertyInfo.accessToInverter || '',
+          meterPhase: propertyInfo.meterPhase || snap.meterPhase || '',
+        };
+        
+        console.log('Prefill data for retailer site visit:', prefill);
+        
+        // Set prefill for retailer site visit
+        localStorage.setItem('xtr_retailer_site_visit_prefill', JSON.stringify(prefill));
+        localStorage.setItem('xtr_retailer_site_visit_context', JSON.stringify({ projectId: project.id }));
+        
+        // Navigate to retailer site visit page
+        console.log('Navigating to retailer site visit page...');
+        window.dispatchEvent(new CustomEvent('xtr-nav', { detail: 'subcontractor-site-visit' }));
+        return;
+      } catch (error) {
+        console.error('Error handling retailer site inspection click:', error);
+      }
+    }
+    
     if (isInHouse || isRetailer) {
       try {
         // First, try to find the actual site visit record from sales person
@@ -602,19 +680,59 @@ export function OnFieldCalendarScreen() {
         if (sv.specialRequirements) salesNotesParts.push(sv.specialRequirements);
         if (matchingLead?.description) salesNotesParts.push(matchingLead.description);
         
+        // Extract all project details for display
+        const projectDetails = project.projectDetails || {};
+        const additionalInfo = projectDetails.additionalInfo || {};
+        const systemInfo = projectDetails.systemInfo || {};
+        const propertyInfo = projectDetails.propertyInfo || {};
+        const utilityInfo = projectDetails.utilityInfo || {};
+        
         const prefill = {
-          customerName: salesSiteVisit?.customerName || sv.customerName || snap.customerName || matchingLead?.title || project.name || '',
-          customerEmail: salesSiteVisit?.customerEmail || sv.customerEmail || snap.customerEmail || matchingLead?.tags?.[0] || '',
-          customerPhone: salesSiteVisit?.customerPhone || sv.customerPhone || snap.customerPhone || matchingLead?.value || '',
-          propertyAddress: salesSiteVisit?.propertyAddress || sv.propertyAddress || snap.customerAddress || project.projectDetails?.additionalInfo?.customerAddress || matchingLead?.company || '',
+          // Project Basic Info
+          projectId: project.id || '',
+          projectName: project.name || '',
+          projectPriority: project.priority || 'medium',
+          projectSystemSize: project.systemSize || systemInfo.systemSize || '',
+          projectType: project.type || '',
+          projectCost: project.cost || additionalInfo.priceAud || '',
+          
+          // Customer Information
+          customerName: salesSiteVisit?.customerName || sv.customerName || snap.customerName || additionalInfo.customerName || matchingLead?.title || project.name || '',
+          customerEmail: salesSiteVisit?.customerEmail || sv.customerEmail || snap.customerEmail || additionalInfo.customerEmail || matchingLead?.tags?.[0] || '',
+          customerPhone: salesSiteVisit?.customerPhone || sv.customerPhone || snap.customerPhone || additionalInfo.customerContact || matchingLead?.value || '',
+          propertyAddress: salesSiteVisit?.propertyAddress || sv.propertyAddress || snap.customerAddress || additionalInfo.customerAddress || project.projectDetails?.additionalInfo?.customerAddress || matchingLead?.company || '',
           propertyType: salesSiteVisit?.propertyType || snap.propertyType || leadSnap.clientType || matchingLead?.projectSnapshot?.propertyType || '',
-          currentEnergyProvider: salesSiteVisit?.currentEnergyProvider || sv.currentEnergyProvider || snap.currentEnergyProvider || leadSnap.utilityInfo?.energyRetailer || '',
-          energyDistributor: salesSiteVisit?.energyDistributor || sv.energyDistributor || snap.energyDistributor || leadSnap.utilityInfo?.distributor || matchingLead?.projectSnapshot?.energyDistributor || '',
+          
+          // Client & Job Info
+          clientType: projectDetails.clientType || snap.clientType || leadSnap.clientType || '',
+          clientName: additionalInfo.clientName || snap.clientName || '',
+          jobType: additionalInfo.jobType || '',
+          siteInspectionDate: additionalInfo.siteInspection?.date || project.siteVisit?.electricianVisitDate || '',
+          siteInspectionTime: additionalInfo.siteInspection?.time || project.siteVisit?.electricianVisitTime || '',
+          priceAud: additionalInfo.priceAud || project.cost || '',
+          
+          // System Information
+          systemSizeKw: systemInfo.systemSize || project.systemSize || '',
+          inverterSizeKw: systemInfo.inverterSize || '',
+          inverterBrand: systemInfo.inverterBrand || '',
+          inverterType: systemInfo.inverterType || '',
+          panelBrand: systemInfo.panelBrand || '',
+          panelModuleWatts: systemInfo.panelModuleWatts || '',
+          
+          // Property Information
+          houseStorey: propertyInfo.houseStorey || salesSiteVisit?.numberOfStory || sv.numberOfStory || snap.numberOfStory || leadSnap.propertyInfo?.houseStorey || matchingLead?.projectSnapshot?.houseStorey || '',
+          roofType: propertyInfo.roofType || salesSiteVisit?.roofType || sv.roofType || snap.roofType || leadSnap.propertyInfo?.roofType || matchingLead?.projectSnapshot?.roofType || '',
+          accessSecondStorey: propertyInfo.accessSecondStorey || '',
+          accessToInverter: propertyInfo.accessToInverter || '',
+          meterPhase: propertyInfo.meterPhase || salesSiteVisit?.meterPhase || sv.meterPhase || snap.meterPhase || leadSnap.propertyInfo?.meterPhase || matchingLead?.projectSnapshot?.meterPhase || '',
+          
+          // Energy Information
+          currentEnergyProvider: utilityInfo.energyRetailer || salesSiteVisit?.currentEnergyProvider || sv.currentEnergyProvider || snap.currentEnergyProvider || leadSnap.utilityInfo?.energyRetailer || '',
+          energyDistributor: utilityInfo.distributor || salesSiteVisit?.energyDistributor || sv.energyDistributor || snap.energyDistributor || leadSnap.utilityInfo?.distributor || matchingLead?.projectSnapshot?.energyDistributor || '',
           averageMonthlyBill: salesSiteVisit?.averageMonthlyBill || sv.averageMonthlyBill || snap.averageMonthlyBill || '',
           roofOrientation: salesSiteVisit?.roofOrientation || sv.roofOrientation || snap.roofOrientation || '',
-          roofType: salesSiteVisit?.roofType || sv.roofType || snap.roofType || leadSnap.propertyInfo?.roofType || matchingLead?.projectSnapshot?.roofType || '',
-          meterPhase: salesSiteVisit?.meterPhase || sv.meterPhase || snap.meterPhase || leadSnap.propertyInfo?.meterPhase || matchingLead?.projectSnapshot?.meterPhase || '',
-          numberOfStory: salesSiteVisit?.numberOfStory || sv.numberOfStory || snap.numberOfStory || leadSnap.propertyInfo?.houseStorey || matchingLead?.projectSnapshot?.houseStorey || '',
+          
+          numberOfStory: propertyInfo.houseStorey || salesSiteVisit?.numberOfStory || sv.numberOfStory || snap.numberOfStory || leadSnap.propertyInfo?.houseStorey || matchingLead?.projectSnapshot?.houseStorey || '',
           shadingAssessment: Array.isArray(salesSiteVisit?.shadingAssessment) ? salesSiteVisit.shadingAssessment : 
                             (Array.isArray(sv.shadingAssessment) ? sv.shadingAssessment : 
                             (Array.isArray(leadSnap.siteVisitInfo?.shadingAssessment) ? leadSnap.siteVisitInfo.shadingAssessment : [])),
@@ -624,6 +742,9 @@ export function OnFieldCalendarScreen() {
           existingSolarInstallations: salesSiteVisit?.existingSolarInstallations || sv.existingSolarInstallations || snap.existingSolarInstallations || leadSnap.siteVisitInfo?.existingSolarInstallations || '',
           interestLevel: salesSiteVisit?.interestLevel || sv.interestLevel || snap.interestLevel || leadSnap.siteVisitInfo?.interestLevel || '',
           salesNotes: salesNotesParts.join('\n\n') || '',
+          
+          // Store full project object for reference
+          _projectData: project,
         };
         
         // Set prefill and context
@@ -650,23 +771,42 @@ export function OnFieldCalendarScreen() {
   const handleSiteVisitClick = (visit: SiteVisit) => {
     // Redirect to site visit page with prefill data when clicking on a site visit from calendar
     try {
-      // The visit object should already contain all the sales data
+      console.log('Electrician Site Visit clicked:', visit);
       const salesNotesParts: string[] = [];
       if (visit.electricianNotes) salesNotesParts.push(`Electrician Notes: ${visit.electricianNotes}`);
       
-      const prefill = {
+      // Initialize prefill with basic fields from visit object
+      const prefill: any = {
+        // Customer Information
         customerName: visit.customerName || '',
         customerEmail: visit.customerEmail || '',
         customerPhone: visit.customerPhone || '',
         propertyAddress: visit.propertyAddress || '',
         propertyType: '',
+        
+        // System Information
+        systemSizeKw: '',
+        inverterSizeKw: '',
+        inverterBrand: '',
+        inverterType: '',
+        panelBrand: '',
+        panelModuleWatts: '',
+        
+        // Property Information
+        houseStorey: '',
+        roofType: '',
+        accessSecondStorey: '',
+        accessToInverter: '',
+        meterPhase: '',
+        numberOfStory: '',
+        
+        // Energy Information
         currentEnergyProvider: '',
         energyDistributor: '',
         averageMonthlyBill: '',
         roofOrientation: '',
-        roofType: '',
-        meterPhase: '',
-        numberOfStory: '',
+        
+        // Other fields
         shadingAssessment: Array.isArray(visit.shadingAssessment) ? visit.shadingAssessment : [],
         primaryMotivation: Array.isArray(visit.primaryMotivation) ? visit.primaryMotivation : [],
         existingSolarInstallations: '',
@@ -686,25 +826,45 @@ export function OnFieldCalendarScreen() {
             });
             
             if (fullSiteVisit) {
-              // Merge with full site visit data
+              console.log('Found full site visit record:', fullSiteVisit);
+              
+              // Customer Information from sales site visit
               prefill.customerName = fullSiteVisit.customerName || prefill.customerName;
               prefill.customerEmail = fullSiteVisit.customerEmail || prefill.customerEmail;
               prefill.customerPhone = fullSiteVisit.customerPhone || prefill.customerPhone;
               prefill.propertyAddress = fullSiteVisit.propertyAddress || prefill.propertyAddress;
               prefill.propertyType = fullSiteVisit.propertyType || prefill.propertyType;
+              
+              // System Information from sales site visit
+              prefill.systemSizeKw = fullSiteVisit.systemSizeKw || prefill.systemSizeKw;
+              prefill.inverterSizeKw = fullSiteVisit.inverterSizeKw || prefill.inverterSizeKw;
+              prefill.inverterBrand = fullSiteVisit.inverterBrand || prefill.inverterBrand;
+              prefill.inverterType = fullSiteVisit.inverterType || prefill.inverterType;
+              prefill.panelBrand = fullSiteVisit.panelBrand || prefill.panelBrand;
+              prefill.panelModuleWatts = fullSiteVisit.panelModuleWatts || prefill.panelModuleWatts;
+              
+              // Property Information from sales site visit
+              prefill.houseStorey = fullSiteVisit.houseStorey || fullSiteVisit.numberOfStory || prefill.houseStorey;
+              prefill.numberOfStory = fullSiteVisit.numberOfStory || fullSiteVisit.houseStorey || prefill.numberOfStory;
+              prefill.roofType = fullSiteVisit.roofType || prefill.roofType; // This will also populate in Roof Assessment section
+              prefill.accessSecondStorey = fullSiteVisit.accessSecondStorey || prefill.accessSecondStorey;
+              prefill.accessToInverter = fullSiteVisit.accessToInverter || prefill.accessToInverter;
+              prefill.meterPhase = fullSiteVisit.meterPhase || prefill.meterPhase;
+              
+              // Energy Information
               prefill.currentEnergyProvider = fullSiteVisit.currentEnergyProvider || prefill.currentEnergyProvider;
               prefill.energyDistributor = fullSiteVisit.energyDistributor || prefill.energyDistributor;
               prefill.averageMonthlyBill = fullSiteVisit.averageMonthlyBill || prefill.averageMonthlyBill;
               prefill.roofOrientation = fullSiteVisit.roofOrientation || prefill.roofOrientation;
-              prefill.roofType = fullSiteVisit.roofType || prefill.roofType;
-              prefill.meterPhase = fullSiteVisit.meterPhase || prefill.meterPhase;
-              prefill.numberOfStory = fullSiteVisit.numberOfStory || prefill.numberOfStory;
+              
+              // Other fields
               prefill.shadingAssessment = Array.isArray(fullSiteVisit.shadingAssessment) ? fullSiteVisit.shadingAssessment : prefill.shadingAssessment;
               prefill.primaryMotivation = Array.isArray(fullSiteVisit.primaryMotivation) ? fullSiteVisit.primaryMotivation : prefill.primaryMotivation;
               prefill.existingSolarInstallations = fullSiteVisit.existingSolarInstallations || prefill.existingSolarInstallations;
               prefill.interestLevel = fullSiteVisit.interestLevel || prefill.interestLevel;
               
-              if (fullSiteVisit.siteNotes) salesNotesParts.push(fullSiteVisit.siteNotes);
+              // Sales notes
+              if (fullSiteVisit.siteNotes) salesNotesParts.push(`Site Notes: ${fullSiteVisit.siteNotes}`);
               if (fullSiteVisit.specialRequirements) salesNotesParts.push(`Special Requirements: ${fullSiteVisit.specialRequirements}`);
               if (fullSiteVisit.nextSteps) salesNotesParts.push(`Next Steps: ${fullSiteVisit.nextSteps}`);
               prefill.salesNotes = salesNotesParts.join('\n\n') || '';
@@ -715,6 +875,8 @@ export function OnFieldCalendarScreen() {
         console.error('Error finding full site visit:', err);
       }
       
+      console.log('Prefill data for Electrician Site Visit:', prefill);
+      
       // Set prefill and context
       localStorage.setItem('xtr_onfield_prefill', JSON.stringify(prefill));
       if (visit.id) {
@@ -722,6 +884,7 @@ export function OnFieldCalendarScreen() {
       }
       
       // Navigate to site-visit page
+      console.log('Navigating to site visit page...');
       window.dispatchEvent(new CustomEvent('xtr-nav', { detail: 'site-visit' }));
       return;
     } catch (error) {
@@ -806,7 +969,18 @@ export function OnFieldCalendarScreen() {
               const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
               const dayProjects = getProjectsForDate(date);
               const daySiteVisits = getSiteVisitsForDate(date);
-              const totalItems = dayProjects.length + daySiteVisits.length;
+              
+              // Prioritize retailer site inspection projects - move them to the front
+              const sortedProjects = [...dayProjects].sort((a, b) => {
+                const aStatus = (a.status || '').toLowerCase().trim();
+                const bStatus = (b.status || '').toLowerCase().trim();
+                if (aStatus === 'site-inspection' && bStatus !== 'site-inspection') return -1;
+                if (bStatus === 'site-inspection' && aStatus !== 'site-inspection') return 1;
+                return 0;
+              });
+              
+              const allItems = [...daySiteVisits, ...sortedProjects];
+              const totalItems = allItems.length;
               
               return (
                 <div
@@ -816,7 +990,7 @@ export function OnFieldCalendarScreen() {
                   <div className="text-sm font-medium mb-1">{day}</div>
                   <div className="space-y-1">
                     {/* Show all items with electrician visits scheduled (site visits and projects) */}
-                    {[...daySiteVisits, ...dayProjects].slice(0, 2).map((item) => {
+                    {allItems.slice(0, 2).map((item) => {
                       // Check if it's a site visit or project
                       const isSiteVisit = 'electricianVisitDate' in item && !('status' in item);
                       const displayName = isSiteVisit 
@@ -829,12 +1003,37 @@ export function OnFieldCalendarScreen() {
                         <div
                           key={isSiteVisit ? `visit-${(item as SiteVisit).id}` : `project-${(item as Project).id}`}
                           className={`text-xs p-1 ${style.bgColor} ${style.textColor} rounded cursor-pointer ${style.hoverColor} flex items-center gap-1.5 relative`}
-                          onClick={() => isSiteVisit ? handleSiteVisitClick(item as SiteVisit) : handleProjectClick(item as Project)}
-                          style={{
-                            borderLeft: `3px solid ${style.borderColor}`
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            console.log('Calendar item clicked:', isSiteVisit ? 'Site Visit' : 'Project', item);
+                            if (isSiteVisit) {
+                              handleSiteVisitClick(item as SiteVisit);
+                            } else {
+                              handleProjectClick(item as Project);
+                            }
                           }}
-                          title={style.label}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          style={{
+                            borderLeft: `3px solid ${style.borderColor}`,
+                            pointerEvents: 'auto',
+                            zIndex: 10
+                          }}
+                          title={`${style.module}: ${style.label}`}
                         >
+                          {/* Module Badge */}
+                          <span 
+                            className="flex-shrink-0 text-[9px] font-bold px-1 py-0.5 rounded"
+                            style={{
+                              backgroundColor: style.borderColor,
+                              color: 'white',
+                              minWidth: '18px',
+                              textAlign: 'center',
+                              lineHeight: '1.2'
+                            }}
+                            title={style.module}
+                          >
+                            {style.moduleBadge}
+                          </span>
                           <span 
                             className="flex-shrink-0" 
                             style={{
@@ -846,18 +1045,7 @@ export function OnFieldCalendarScreen() {
                             }}
                             title={style.label}
                           ></span>
-                          <span 
-                            className="flex-shrink-0" 
-                            style={{
-                              width: '8px',
-                              height: '8px',
-                              backgroundColor: style.dotColor,
-                              borderRadius: '50%',
-                              display: 'inline-block'
-                            }}
-                            title={style.label}
-                          ></span>
-                          <span className="truncate">⚡ {displayName}</span>
+                          <span className="truncate font-medium">{displayName}</span>
                         </div>
                       );
                     })}
@@ -908,9 +1096,20 @@ export function OnFieldCalendarScreen() {
                         <div
                           key={isSiteVisit ? `visit-${(item as SiteVisit).id}` : `project-${(item as Project).id}`}
                           className={`text-xs p-1.5 ${style.bgColor} ${style.textColor} rounded cursor-pointer ${style.hoverColor} flex items-center gap-1.5 relative mb-1`}
-                          onClick={() => isSiteVisit ? handleSiteVisitClick(item as SiteVisit) : handleProjectClick(item as Project)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            console.log('Calendar item clicked (weekly view):', isSiteVisit ? 'Site Visit' : 'Project', item);
+                            if (isSiteVisit) {
+                              handleSiteVisitClick(item as SiteVisit);
+                            } else {
+                              handleProjectClick(item as Project);
+                            }
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
                           style={{
-                            borderLeft: `3px solid ${style.borderColor}`
+                            borderLeft: `3px solid ${style.borderColor}`,
+                            pointerEvents: 'auto',
+                            zIndex: 10
                           }}
                           title={style.label}
                         >

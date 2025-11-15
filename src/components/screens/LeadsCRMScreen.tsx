@@ -699,7 +699,7 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
       notes: projectForm.notes || null,
       // derived from lead
       leadId: selectedLead.id,
-      clientType: projectForm.clientType,
+      clientType: projectForm.clientType || null,
       customerName: projectForm.customerName,
       customerEmail: projectForm.customerEmail,
       customerPhone: projectForm.customerContact,
@@ -1100,17 +1100,24 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
     if (newStatus === 'sales-site-visit') {
       try {
         const snap = (updatedLead as any).projectSnapshot || {};
+        const sv = (updatedLead as any).siteVisit || {};
         const prefill = {
+          // Basic Information
+          salesPersonName: '', // Will be auto-filled from logged-in user
           customerName: snap.customerName || updatedLead.title || '',
-          customerEmail: snap.customerEmail || (updatedLead.tags && updatedLead.tags[0]) || '',
-          customerPhone: snap.customerPhone || updatedLead.value || '',
-          customerAddress: snap.customerAddress || updatedLead.company || '',
-          clientType: snap.clientType || '',
-          distributor: snap.utilityInfo?.distributor || '',
-          roofType: snap.propertyInfo?.roofType || '',
-          houseStorey: snap.propertyInfo?.houseStorey || '',
-          meterPhase: snap.propertyInfo?.meterPhase || '',
-          energyRetailer: snap.utilityInfo?.energyRetailer || '',
+          propertyAddress: snap.customerAddress || updatedLead.company || '',
+          propertyType: snap.clientType || '', // Map clientType to propertyType
+          
+          // Energy Information
+          currentEnergyProvider: snap.utilityInfo?.energyRetailer || sv.currentEnergyProvider || '',
+          energyDistributor: snap.utilityInfo?.distributor || sv.energyDistributor || '',
+          averageMonthlyBill: sv.averageMonthlyBill || snap.siteVisitInfo?.averageMonthlyBill || '',
+          roofOrientation: sv.roofOrientation || snap.siteVisitInfo?.roofOrientation || '',
+          
+          // Property Details
+          roofType: snap.propertyInfo?.roofType || sv.roofType || '',
+          meterPhase: snap.propertyInfo?.meterPhase || sv.meterPhase || '',
+          numberOfStory: snap.propertyInfo?.houseStorey || sv.numberOfStory || '',
         };
         localStorage.setItem('xtr_site_visit_prefill', JSON.stringify(prefill));
         localStorage.setItem('xtr_site_visit_context', JSON.stringify({ leadId: updatedLead.id }));
@@ -2163,37 +2170,23 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
                 <Label>Start Date</Label>
                 <Input type="date" value={projectForm.startDate} onChange={(e) => setProjectForm({ ...projectForm, startDate: e.target.value })} />
               </div>
-              
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Client Type</Label>
-                <Select value={projectForm.clientType} onValueChange={(v) => setProjectForm({ ...projectForm, clientType: v })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Client Type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="residential">Residential</SelectItem>
-                    <SelectItem value="commercial">Commercial</SelectItem>
-                    <SelectItem value="industrial">Industrial</SelectItem>
-                    <SelectItem value="government">Government</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
               <div>
                 <Label>Customer Name</Label>
                 <Input value={projectForm.customerName} onChange={(e) => setProjectForm({ ...projectForm, customerName: e.target.value })} placeholder="Customer name" />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Customer Email</Label>
                 <Input value={projectForm.customerEmail} onChange={(e) => setProjectForm({ ...projectForm, customerEmail: e.target.value })} placeholder="customer@email.com" />
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Customer Contact</Label>
                 <Input value={projectForm.customerContact} onChange={(e) => setProjectForm({ ...projectForm, customerContact: e.target.value })} placeholder="+61 ..." />
               </div>
+              <div></div>
             </div>
             <div>
               <Label>Customer Address</Label>

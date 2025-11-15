@@ -2126,14 +2126,18 @@ export function ProjectManagementScreen() {
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 <span>Sync Active</span>
               </div>
-              <Button variant="outline" onClick={handleManualRefresh} title="Refresh projects from Firestore">
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Refresh Projects
-              </Button>
-              <Button variant="outline" onClick={() => { setShowSyncStatus(true); checkSyncStatus(); }} title="Check sync status between devices">
-                <MessageSquare className="w-4 h-4 mr-2" />
-                Sync Status
-              </Button>
+              {currentView !== "calendar" && (
+                <>
+                  <Button variant="outline" onClick={handleManualRefresh} title="Refresh projects from Firestore">
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Refresh Projects
+                  </Button>
+                  <Button variant="outline" onClick={() => { setShowSyncStatus(true); checkSyncStatus(); }} title="Check sync status between devices">
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                    Sync Status
+                  </Button>
+                </>
+              )}
             </>
           ) : (
             <div className="flex items-center gap-2 text-sm text-orange-600">
