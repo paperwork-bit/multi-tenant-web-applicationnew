@@ -176,13 +176,13 @@ export function OnFieldSiteVisitScreen() {
         projectPriority: pre.projectPriority || prev.projectPriority,
         projectSystemSize: pre.projectSystemSize || prev.projectSystemSize,
         projectType: pre.projectType || prev.projectType,
-        projectCost: pre.projectCost || prev.projectCost,
+        projectCost: pre.projectCost || pre.priceAud || pre._projectData?.siteVisit?.projectCost || pre._projectData?.siteVisit?.priceAud || pre._projectData?.siteVisit?.price || prev.projectCost || prev.priceAud,
         
-        // Client & Job Information
-        priceAud: pre.priceAud || prev.priceAud,
+        // Client & Job Information - Map all price sources to priceAud, including site visit price
+        priceAud: pre.priceAud || pre.projectCost || pre._projectData?.siteVisit?.priceAud || pre._projectData?.siteVisit?.projectCost || pre._projectData?.siteVisit?.price || prev.priceAud || prev.projectCost,
         
-        // System Information
-        systemSizeKw: pre.systemSizeKw || prev.systemSizeKw,
+        // System Information - Include projectSystemSize as fallback
+        systemSizeKw: pre.systemSizeKw || pre.projectSystemSize || prev.systemSizeKw || prev.projectSystemSize,
         inverterSizeKw: pre.inverterSizeKw || prev.inverterSizeKw,
         inverterBrand: pre.inverterBrand || prev.inverterBrand,
         inverterType: pre.inverterType || prev.inverterType,
@@ -194,10 +194,10 @@ export function OnFieldSiteVisitScreen() {
         accessSecondStorey: pre.accessSecondStorey || prev.accessSecondStorey,
         accessToInverter: pre.accessToInverter || prev.accessToInverter,
         
-        // Customer Information
+        // Customer Information - Ensure all sources are checked
         customerName: pre.customerName || prev.customerName,
-        customerEmail: pre.customerEmail || prev.customerEmail,
-        customerPhone: pre.customerPhone || prev.customerPhone,
+        customerEmail: pre.customerEmail || pre._projectData?.projectSnapshot?.customerEmail || pre._projectData?.siteVisit?.customerEmail || prev.customerEmail,
+        customerPhone: pre.customerPhone || pre._projectData?.projectSnapshot?.customerPhone || pre._projectData?.siteVisit?.customerPhone || prev.customerPhone,
         propertyAddress: pre.propertyAddress || prev.propertyAddress,
         propertyType: pre.propertyType || prev.propertyType,
         currentEnergyProvider: pre.currentEnergyProvider || prev.currentEnergyProvider,
@@ -284,39 +284,39 @@ export function OnFieldSiteVisitScreen() {
         projectId: projectData.id || found.id || prev.projectId,
         projectName: projectData.name || snap.projectName || found.title || prev.projectName,
         projectPriority: projectData.priority || snap.priority || prev.projectPriority,
-        projectSystemSize: projectData.systemSize || systemInfo.systemSize || snap.systemSize || prev.projectSystemSize,
+        projectSystemSize: projectData.systemSize || systemInfo.systemSize || snap.systemSize || snap.systemInfo?.systemSize || prev.projectSystemSize,
         projectType: projectData.type || snap.type || prev.projectType,
-        projectCost: projectData.cost || additionalInfo.priceAud || snap.price || prev.projectCost,
+        projectCost: sv.priceAud || sv.price || sv.projectCost || projectData.cost || additionalInfo.priceAud || snap.price || prev.projectCost || prev.priceAud,
         
-        // Client & Job Information
-        priceAud: additionalInfo.priceAud || projectData.cost || snap.price || prev.priceAud,
+        // Client & Job Information - Map all price sources to priceAud, including site visit price
+        priceAud: sv.priceAud || sv.price || sv.projectCost || additionalInfo.priceAud || projectData.cost || snap.price || prev.priceAud || prev.projectCost,
         
-        // System Information
-        systemSizeKw: systemInfo.systemSize || projectData.systemSize || snap.systemSize || prev.systemSizeKw,
-        inverterSizeKw: systemInfo.inverterSize || snap.inverterSize || prev.inverterSizeKw,
-        inverterBrand: systemInfo.inverterBrand || snap.inverterBrand || prev.inverterBrand,
-        inverterType: systemInfo.inverterType || snap.inverterType || prev.inverterType,
-        panelBrand: systemInfo.panelBrand || snap.panelBrand || prev.panelBrand,
-        panelModuleWatts: systemInfo.panelModuleWatts || snap.panelModuleWatts || prev.panelModuleWatts,
+        // System Information - Check all possible sources including snap.systemInfo
+        systemSizeKw: systemInfo.systemSize || projectData.systemSize || snap.systemSize || snap.systemInfo?.systemSize || prev.systemSizeKw || prev.projectSystemSize,
+        inverterSizeKw: systemInfo.inverterSize || snap.systemInfo?.inverterSize || snap.inverterSize || prev.inverterSizeKw,
+        inverterBrand: systemInfo.inverterBrand || snap.systemInfo?.inverterBrand || snap.inverterBrand || prev.inverterBrand,
+        inverterType: systemInfo.inverterType || snap.systemInfo?.inverterType || snap.inverterType || prev.inverterType,
+        panelBrand: systemInfo.panelBrand || snap.systemInfo?.panelBrand || snap.panelBrand || prev.panelBrand,
+        panelModuleWatts: systemInfo.panelModuleWatts || snap.systemInfo?.panelModuleWatts || snap.panelModuleWatts || prev.panelModuleWatts,
         
         // Property Information
         houseStorey: propertyInfo.houseStorey || snap.propertyInfo?.houseStorey || prev.houseStorey,
         accessSecondStorey: propertyInfo.accessSecondStorey || snap.accessSecondStorey || prev.accessSecondStorey,
         accessToInverter: propertyInfo.accessToInverter || snap.accessToInverter || prev.accessToInverter,
         
-        // Customer Information
-        customerName: snap.customerName || found.title || prev.customerName,
-        customerEmail: snap.customerEmail || (found.tags && found.tags[0]) || prev.customerEmail,
-        customerPhone: snap.customerPhone || found.value || prev.customerPhone,
-        propertyAddress: snap.customerAddress || found.company || prev.propertyAddress,
+        // Customer Information - Check all sources including site visit
+        customerName: snap.customerName || sv.customerName || found.title || prev.customerName,
+        customerEmail: snap.customerEmail || sv.customerEmail || (found.tags && found.tags[0]) || prev.customerEmail,
+        customerPhone: snap.customerPhone || sv.customerPhone || found.value || prev.customerPhone,
+        propertyAddress: snap.customerAddress || sv.propertyAddress || found.company || prev.propertyAddress,
         propertyType: snap.clientType || prev.propertyType,
         currentEnergyProvider: utilityInfo.energyRetailer || snap.utilityInfo?.energyRetailer || sv.currentEnergyProvider || prev.currentEnergyProvider,
         energyDistributor: utilityInfo.distributor || snap.utilityInfo?.distributor || sv.energyDistributor || prev.energyDistributor,
         averageMonthlyBill: sv.averageMonthlyBill || prev.averageMonthlyBill,
         roofOrientation: sv.roofOrientation || prev.roofOrientation,
         roofType: propertyInfo.roofType || snap.propertyInfo?.roofType || sv.roofType || prev.roofType,
-        meterPhase: propertyInfo.meterPhase || snap.propertyInfo?.meterPhase || prev.meterPhase,
-        numberOfStory: propertyInfo.houseStorey || snap.propertyInfo?.houseStorey || prev.numberOfStory,
+        meterPhase: propertyInfo.meterPhase || snap.propertyInfo?.meterPhase || sv.meterPhase || prev.meterPhase,
+        numberOfStory: propertyInfo.houseStorey || snap.propertyInfo?.houseStorey || sv.numberOfStory || prev.numberOfStory,
         shadingAssessment: (snap.siteVisitInfo?.shadingAssessment) || (Array.isArray(sv.shadingAssessment) ? sv.shadingAssessment : prev.shadingAssessment),
         primaryMotivation: (snap.siteVisitInfo?.primaryMotivation) || (Array.isArray(sv.primaryMotivation) ? sv.primaryMotivation : prev.primaryMotivation),
         existingSolarInstallations: snap.siteVisitInfo?.existingSolarInstallations || sv.existingSolarInstallations || prev.existingSolarInstallations,

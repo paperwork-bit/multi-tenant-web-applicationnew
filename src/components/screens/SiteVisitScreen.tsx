@@ -23,7 +23,18 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
     // Image 1: Basic Information
     salesPersonName: "",
     customerName: "",
+    customerEmail: "",
+    customerPhone: "",
     propertyAddress: "",
+    price: "",
+    
+    // System Information
+    systemSizeKw: "",
+    inverterSizeKw: "",
+    inverterBrand: "",
+    inverterType: "",
+    panelBrand: "",
+    panelModuleWatts: "",
     
     // Image 2: Energy Information
     currentEnergyProvider: "",
@@ -37,6 +48,8 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
     meterPhase: "",
     numberOfStory: "",
     numberOfStoryOther: "",
+    accessSecondStorey: "",
+    accessToInverter: "",
     
     // Image 4: Assessment Information
     shadingAssessment: [] as string[],
@@ -126,7 +139,18 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
           // Basic Information - from project details
           salesPersonName: pre.salesPersonName || prev.salesPersonName,
           customerName: pre.customerName || prev.customerName,
+          customerEmail: pre.customerEmail || prev.customerEmail,
+          customerPhone: pre.customerPhone || pre.customerContact || prev.customerPhone,
           propertyAddress: pre.propertyAddress || pre.customerAddress || prev.propertyAddress,
+          price: pre.price || pre.priceAud || pre.projectCost || prev.price,
+          
+          // System Information
+          systemSizeKw: pre.systemSizeKw || pre.systemSize || prev.systemSizeKw,
+          inverterSizeKw: pre.inverterSizeKw || prev.inverterSizeKw,
+          inverterBrand: pre.inverterBrand || prev.inverterBrand,
+          inverterType: pre.inverterType || prev.inverterType,
+          panelBrand: pre.panelBrand || prev.panelBrand,
+          panelModuleWatts: pre.panelModuleWatts || prev.panelModuleWatts,
           
           // Energy Information - from project details (with mapping)
           currentEnergyProvider: pre.currentEnergyProvider || prev.currentEnergyProvider,
@@ -138,6 +162,8 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
           roofType: pre.roofType || prev.roofType,
           meterPhase: mapMeterPhase(pre.meterPhase) || prev.meterPhase,
           numberOfStory: pre.numberOfStory || pre.houseStorey || prev.numberOfStory,
+          accessSecondStorey: pre.accessSecondStorey || prev.accessSecondStorey,
+          accessToInverter: pre.accessToInverter || prev.accessToInverter,
         }));
         // Clear once consumed to avoid stale data on future opens
         localStorage.removeItem('xtr_site_visit_prefill');
@@ -173,7 +199,18 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
                 ...prev,
                 // Basic Information - from project details
                 customerName: snap.customerName || foundLead.title || prev.customerName,
-                propertyAddress: snap.customerAddress || foundLead.company || prev.propertyAddress,
+                customerEmail: snap.customerEmail || (foundLead.tags && foundLead.tags[0]) || sv.customerEmail || prev.customerEmail,
+                customerPhone: snap.customerPhone || foundLead.value || sv.customerPhone || prev.customerPhone,
+                propertyAddress: snap.customerAddress || foundLead.company || sv.propertyAddress || prev.propertyAddress,
+                price: snap.price || snap.projectDetails?.additionalInfo?.priceAud || prev.price,
+                
+                // System Information
+                systemSizeKw: snap.systemInfo?.systemSize || snap.systemSize || sv.systemSizeKw || prev.systemSizeKw,
+                inverterSizeKw: snap.systemInfo?.inverterSize || sv.inverterSizeKw || prev.inverterSizeKw,
+                inverterBrand: snap.systemInfo?.inverterBrand || sv.inverterBrand || prev.inverterBrand,
+                inverterType: snap.systemInfo?.inverterType || sv.inverterType || prev.inverterType,
+                panelBrand: snap.systemInfo?.panelBrand || sv.panelBrand || prev.panelBrand,
+                panelModuleWatts: snap.systemInfo?.panelModuleWatts || sv.panelModuleWatts || prev.panelModuleWatts,
                 
                 // Energy Information - from project details (with mapping)
                 currentEnergyProvider: snap.utilityInfo?.energyRetailer || sv.currentEnergyProvider || prev.currentEnergyProvider,
@@ -185,6 +222,8 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
                 roofType: snap.propertyInfo?.roofType || sv.roofType || prev.roofType,
                 meterPhase: mapMeterPhase(snap.propertyInfo?.meterPhase || sv.meterPhase) || prev.meterPhase,
                 numberOfStory: snap.propertyInfo?.houseStorey || sv.numberOfStory || prev.numberOfStory,
+                accessSecondStorey: snap.propertyInfo?.accessSecondStorey || sv.accessSecondStorey || prev.accessSecondStorey,
+                accessToInverter: snap.propertyInfo?.accessToInverter || sv.accessToInverter || prev.accessToInverter,
               }));
             }
           }
@@ -337,11 +376,14 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const siteVisitId = `SV-${Date.now()}`;
+    // Ensure dateOfVisit is set to current date if not already set
+    const currentDate = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
     const siteVisit = {
       id: siteVisitId,
       createdAt: new Date().toISOString(),
       salesPersonEmail: userEmail || '',
       ...formData,
+      dateOfVisit: formData.dateOfVisit || currentDate,
     } as any;
     try {
       // Save in a simple collection for PM/Operations visibility
@@ -416,6 +458,15 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
       window.dispatchEvent(new CustomEvent('xtr-leads-attach-site-visit', { detail: { leadId, siteVisit } }));
     } catch {}
 
+    // Clear prefill and context data to prevent re-population
+    try {
+      localStorage.removeItem('xtr_site_visit_prefill');
+      localStorage.removeItem('xtr_site_visit_context');
+    } catch {}
+    
+    // Reset form to blank after submitting
+    setFormData(initialForm);
+    
     // Navigate back to Leads CRM
     try { window.dispatchEvent(new CustomEvent('xtr-nav', { detail: 'leads-crm' })); } catch {}
     alert("Site visit form submitted successfully!");
@@ -423,7 +474,14 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
 
   const handleSaveDraft = () => {
     const id = editingDraftId || `DRAFT-${Date.now()}`;
-    const draft = { id, updatedAt: new Date().toISOString(), ...formData } as any;
+    // Ensure dateOfVisit is set to current date if not already set
+    const currentDate = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+    const draft = { 
+      id, 
+      updatedAt: new Date().toISOString(), 
+      ...formData,
+      dateOfVisit: formData.dateOfVisit || currentDate,
+    } as any;
     try {
       const prev = JSON.parse(localStorage.getItem('xtr_site_visit_drafts') || '[]');
       let next: any[];
@@ -434,6 +492,13 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
       }
       localStorage.setItem('xtr_site_visit_drafts', JSON.stringify(next));
       setDrafts(next);
+      
+      // Clear prefill and context data to prevent re-population
+      try {
+        localStorage.removeItem('xtr_site_visit_prefill');
+        localStorage.removeItem('xtr_site_visit_context');
+      } catch {}
+      
       // Reset form to blank after saving draft
       setFormData(initialForm);
       setEditingDraftId(null);
@@ -451,7 +516,18 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
       ["Date of Visit", formData.dateOfVisit],
       ["Sales Person Name", formData.salesPersonName],
       ["Customer Name", formData.customerName],
+      ["Customer Email", formData.customerEmail],
+      ["Customer Contact", formData.customerPhone],
       ["Property Address", formData.propertyAddress],
+      ["Price (AUD)", formData.price],
+      
+      // System Information
+      ["System Size (kW)", formData.systemSizeKw],
+      ["Inverter Size (kW)", formData.inverterSizeKw],
+      ["Inverter Brand", formData.inverterBrand],
+      ["Inverter Type", formData.inverterType],
+      ["Panel Brand", formData.panelBrand],
+      ["Panel Module (Watts)", formData.panelModuleWatts],
       
       // Energy Information
       ["Energy Retailer", formData.currentEnergyProvider],
@@ -465,6 +541,8 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
       ["Meter Phase", formData.meterPhase],
       ["Number of Storey", formData.numberOfStory],
       ["Number of Storey Other", formData.numberOfStoryOther],
+      ["Access to 2nd Storey", formData.accessSecondStorey],
+      ["Access to Inverter", formData.accessToInverter],
       ["Shading Assessment", (formData.shadingAssessment || []).join(", ")],
       ["Shading Assessment Other", formData.shadingAssessmentOther],
       
@@ -559,8 +637,45 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
                     <Label>Property Address</Label>
                     <p>{viewVisit.propertyAddress || '-'}</p>
                   </div>
+                  <div>
+                    <Label>Price (AUD)</Label>
+                    <p>{viewVisit.price || viewVisit.priceAud || '-'}</p>
+                  </div>
                 </div>
               </div>
+
+              {/* System Information */}
+              {(viewVisit.systemSizeKw || viewVisit.inverterBrand || viewVisit.panelBrand) && (
+                <div>
+                  <p className="font-medium mb-2">System Information</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>System Size (kW)</Label>
+                      <p>{viewVisit.systemSizeKw || '-'}</p>
+                    </div>
+                    <div>
+                      <Label>Inverter Size (kW)</Label>
+                      <p>{viewVisit.inverterSizeKw || '-'}</p>
+                    </div>
+                    <div>
+                      <Label>Inverter Brand</Label>
+                      <p>{viewVisit.inverterBrand || '-'}</p>
+                    </div>
+                    <div>
+                      <Label>Inverter Type</Label>
+                      <p>{viewVisit.inverterType || '-'}</p>
+                    </div>
+                    <div>
+                      <Label>Panel Brand</Label>
+                      <p>{viewVisit.panelBrand || '-'}</p>
+                    </div>
+                    <div>
+                      <Label>Panel Module (Watts)</Label>
+                      <p>{viewVisit.panelModuleWatts || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Energy Information */}
               <div>
@@ -600,6 +715,14 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
                   <div>
                     <Label>Number of Storey</Label>
                     <p className="capitalize">{viewVisit.numberOfStory || '-'}</p>
+                  </div>
+                  <div>
+                    <Label>Access to 2nd Storey</Label>
+                    <p className="capitalize">{viewVisit.accessSecondStorey || '-'}</p>
+                  </div>
+                  <div>
+                    <Label>Access to Inverter</Label>
+                    <p className="capitalize">{viewVisit.accessToInverter || '-'}</p>
                   </div>
                   <div className="col-span-2">
                     <Label>Shading Assessment</Label>
@@ -713,6 +836,25 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
                     required
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="customerEmail">Customer Email</Label>
+                  <Input
+                    id="customerEmail"
+                    type="email"
+                    value={formData.customerEmail}
+                    onChange={(e) => handleInputChange("customerEmail", e.target.value)}
+                    placeholder="customer@email.com"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="customerPhone">Customer Contact</Label>
+                  <Input
+                    id="customerPhone"
+                    value={formData.customerPhone}
+                    onChange={(e) => handleInputChange("customerPhone", e.target.value)}
+                    placeholder="+61 400 000 000"
+                  />
+                </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="propertyAddress">Property Address</Label>
                   <Textarea
@@ -722,6 +864,83 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
                     placeholder="Long answer text"
                     rows={3}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="price">Price (AUD)</Label>
+                  <Input
+                    id="price"
+                    type="text"
+                    value={formData.price}
+                    onChange={(e) => handleInputChange("price", e.target.value)}
+                    placeholder="$"
+                  />
+                </div>
+              </div>
+              
+              {/* System Information */}
+              <div className="pt-4 border-t">
+                <Label className="text-base font-semibold mb-4 block">System Information</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="systemSizeKw">System Size (kW)</Label>
+                    <Input
+                      id="systemSizeKw"
+                      type="number"
+                      step="0.1"
+                      value={formData.systemSizeKw}
+                      onChange={(e) => handleInputChange("systemSizeKw", e.target.value)}
+                      placeholder="e.g., 6.6"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="inverterSizeKw">Inverter Size (kW)</Label>
+                    <Input
+                      id="inverterSizeKw"
+                      type="number"
+                      step="0.1"
+                      value={formData.inverterSizeKw}
+                      onChange={(e) => handleInputChange("inverterSizeKw", e.target.value)}
+                      placeholder="e.g., 5"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="inverterBrand">Inverter Brand</Label>
+                    <Input
+                      id="inverterBrand"
+                      value={formData.inverterBrand}
+                      onChange={(e) => handleInputChange("inverterBrand", e.target.value)}
+                      placeholder="e.g., Fronius, Sungrow"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="inverterType">Inverter Type</Label>
+                    <Input
+                      id="inverterType"
+                      value={formData.inverterType}
+                      onChange={(e) => handleInputChange("inverterType", e.target.value)}
+                      placeholder="e.g., String, Micro"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="panelBrand">Panel Brand</Label>
+                    <Input
+                      id="panelBrand"
+                      value={formData.panelBrand}
+                      onChange={(e) => handleInputChange("panelBrand", e.target.value)}
+                      placeholder="e.g., Jinko, Longi"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="panelModuleWatts">Panel Module (Watts)</Label>
+                    <Input
+                      id="panelModuleWatts"
+                      type="number"
+                      step="1"
+                      value={formData.panelModuleWatts}
+                      onChange={(e) => handleInputChange("panelModuleWatts", e.target.value)}
+                      placeholder="e.g., 415"
+                    />
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -870,6 +1089,31 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
                     />
                   </div>
                 )}
+                <div className="space-y-2">
+                  <Label htmlFor="accessSecondStorey">Access to 2nd Storey</Label>
+                  <Select value={formData.accessSecondStorey} onValueChange={(value) => handleInputChange("accessSecondStorey", value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select access" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="yes">Yes</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
+                      <SelectItem value="na">NA</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="accessToInverter">Access to Inverter</Label>
+                  <Select value={formData.accessToInverter} onValueChange={(value) => handleInputChange("accessToInverter", value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select access" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="yes">Yes</SelectItem>
+                      <SelectItem value="no-access-required">No Access Required</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardContent>
           </Card>

@@ -671,6 +671,12 @@ export function OnFieldCalendarScreen() {
         const sv = project.siteVisit || {};
         const leadSnap = matchingLead?.projectSnapshot || {};
         
+        // Debug: Log what data we found
+        console.log('Prefill Debug - Project:', project);
+        console.log('Prefill Debug - Sales Site Visit:', salesSiteVisit);
+        console.log('Prefill Debug - Matching Lead:', matchingLead);
+        console.log('Prefill Debug - Lead Snapshot:', leadSnap);
+        
         // Combine all sales notes
         const salesNotesParts: string[] = [];
         if (salesSiteVisit?.siteNotes) salesNotesParts.push(salesSiteVisit.siteNotes);
@@ -683,20 +689,20 @@ export function OnFieldCalendarScreen() {
         // Extract all project details for display
         const projectDetails = project.projectDetails || {};
         const additionalInfo = projectDetails.additionalInfo || {};
-        const systemInfo = projectDetails.systemInfo || {};
-        const propertyInfo = projectDetails.propertyInfo || {};
-        const utilityInfo = projectDetails.utilityInfo || {};
+        const systemInfo = projectDetails.systemInfo || snap.systemInfo || leadSnap.systemInfo || {};
+        const propertyInfo = projectDetails.propertyInfo || snap.propertyInfo || leadSnap.propertyInfo || {};
+        const utilityInfo = projectDetails.utilityInfo || snap.utilityInfo || leadSnap.utilityInfo || {};
         
         const prefill = {
           // Project Basic Info
           projectId: project.id || '',
           projectName: project.name || '',
           projectPriority: project.priority || 'medium',
-          projectSystemSize: project.systemSize || systemInfo.systemSize || '',
+          projectSystemSize: project.systemSize || systemInfo.systemSize || snap.systemSize || '',
           projectType: project.type || '',
-          projectCost: project.cost || additionalInfo.priceAud || '',
+          projectCost: project.cost || additionalInfo.priceAud || snap.price || '',
           
-          // Customer Information
+          // Customer Information - Check all sources
           customerName: salesSiteVisit?.customerName || sv.customerName || snap.customerName || additionalInfo.customerName || matchingLead?.title || project.name || '',
           customerEmail: salesSiteVisit?.customerEmail || sv.customerEmail || snap.customerEmail || additionalInfo.customerEmail || matchingLead?.tags?.[0] || '',
           customerPhone: salesSiteVisit?.customerPhone || sv.customerPhone || snap.customerPhone || additionalInfo.customerContact || matchingLead?.value || '',
@@ -709,21 +715,21 @@ export function OnFieldCalendarScreen() {
           jobType: additionalInfo.jobType || '',
           siteInspectionDate: additionalInfo.siteInspection?.date || project.siteVisit?.electricianVisitDate || '',
           siteInspectionTime: additionalInfo.siteInspection?.time || project.siteVisit?.electricianVisitTime || '',
-          priceAud: additionalInfo.priceAud || project.cost || '',
+          priceAud: salesSiteVisit?.priceAud || salesSiteVisit?.projectCost || additionalInfo.priceAud || project.cost || snap.price || '',
           
-          // System Information
-          systemSizeKw: systemInfo.systemSize || project.systemSize || '',
-          inverterSizeKw: systemInfo.inverterSize || '',
-          inverterBrand: systemInfo.inverterBrand || '',
-          inverterType: systemInfo.inverterType || '',
-          panelBrand: systemInfo.panelBrand || '',
-          panelModuleWatts: systemInfo.panelModuleWatts || '',
+          // System Information - Check all possible sources including salesSiteVisit, snap.systemInfo, and leadSnap
+          systemSizeKw: salesSiteVisit?.systemSizeKw || systemInfo.systemSize || project.systemSize || snap.systemSize || snap.systemInfo?.systemSize || leadSnap.systemInfo?.systemSize || matchingLead?.projectSnapshot?.systemInfo?.systemSize || '',
+          inverterSizeKw: salesSiteVisit?.inverterSizeKw || systemInfo.inverterSize || snap.systemInfo?.inverterSize || leadSnap.systemInfo?.inverterSize || matchingLead?.projectSnapshot?.systemInfo?.inverterSize || '',
+          inverterBrand: salesSiteVisit?.inverterBrand || systemInfo.inverterBrand || snap.systemInfo?.inverterBrand || leadSnap.systemInfo?.inverterBrand || matchingLead?.projectSnapshot?.systemInfo?.inverterBrand || '',
+          inverterType: salesSiteVisit?.inverterType || systemInfo.inverterType || snap.systemInfo?.inverterType || leadSnap.systemInfo?.inverterType || matchingLead?.projectSnapshot?.systemInfo?.inverterType || '',
+          panelBrand: salesSiteVisit?.panelBrand || systemInfo.panelBrand || snap.systemInfo?.panelBrand || leadSnap.systemInfo?.panelBrand || matchingLead?.projectSnapshot?.systemInfo?.panelBrand || '',
+          panelModuleWatts: salesSiteVisit?.panelModuleWatts || systemInfo.panelModuleWatts || snap.systemInfo?.panelModuleWatts || leadSnap.systemInfo?.panelModuleWatts || matchingLead?.projectSnapshot?.systemInfo?.panelModuleWatts || '',
           
           // Property Information
           houseStorey: propertyInfo.houseStorey || salesSiteVisit?.numberOfStory || sv.numberOfStory || snap.numberOfStory || leadSnap.propertyInfo?.houseStorey || matchingLead?.projectSnapshot?.houseStorey || '',
           roofType: propertyInfo.roofType || salesSiteVisit?.roofType || sv.roofType || snap.roofType || leadSnap.propertyInfo?.roofType || matchingLead?.projectSnapshot?.roofType || '',
-          accessSecondStorey: propertyInfo.accessSecondStorey || '',
-          accessToInverter: propertyInfo.accessToInverter || '',
+          accessSecondStorey: propertyInfo.accessSecondStorey || snap.accessSecondStorey || leadSnap.propertyInfo?.accessSecondStorey || matchingLead?.projectSnapshot?.propertyInfo?.accessSecondStorey || '',
+          accessToInverter: propertyInfo.accessToInverter || snap.accessToInverter || leadSnap.propertyInfo?.accessToInverter || matchingLead?.projectSnapshot?.propertyInfo?.accessToInverter || '',
           meterPhase: propertyInfo.meterPhase || salesSiteVisit?.meterPhase || sv.meterPhase || snap.meterPhase || leadSnap.propertyInfo?.meterPhase || matchingLead?.projectSnapshot?.meterPhase || '',
           
           // Energy Information
@@ -746,6 +752,9 @@ export function OnFieldCalendarScreen() {
           // Store full project object for reference
           _projectData: project,
         };
+        
+        // Debug: Log final prefill data
+        console.log('Prefill Debug - Final Prefill Data:', prefill);
         
         // Set prefill and context
         localStorage.setItem('xtr_onfield_prefill', JSON.stringify(prefill));
@@ -784,13 +793,17 @@ export function OnFieldCalendarScreen() {
         propertyAddress: visit.propertyAddress || '',
         propertyType: '',
         
+        // Price - Initialize from visit if available
+        priceAud: visit.priceAud || visit.projectCost || '',
+        projectCost: visit.projectCost || visit.priceAud || '',
+        
         // System Information
-        systemSizeKw: '',
-        inverterSizeKw: '',
-        inverterBrand: '',
-        inverterType: '',
-        panelBrand: '',
-        panelModuleWatts: '',
+        systemSizeKw: visit.systemSizeKw || '',
+        inverterSizeKw: visit.inverterSizeKw || '',
+        inverterBrand: visit.inverterBrand || '',
+        inverterType: visit.inverterType || '',
+        panelBrand: visit.panelBrand || '',
+        panelModuleWatts: visit.panelModuleWatts || '',
         
         // Property Information
         houseStorey: '',
@@ -834,6 +847,12 @@ export function OnFieldCalendarScreen() {
               prefill.customerPhone = fullSiteVisit.customerPhone || prefill.customerPhone;
               prefill.propertyAddress = fullSiteVisit.propertyAddress || prefill.propertyAddress;
               prefill.propertyType = fullSiteVisit.propertyType || prefill.propertyType;
+              
+              // Price from sales site visit
+              if (fullSiteVisit.priceAud || fullSiteVisit.projectCost) {
+                prefill.priceAud = fullSiteVisit.priceAud || fullSiteVisit.projectCost || prefill.priceAud;
+                prefill.projectCost = fullSiteVisit.projectCost || fullSiteVisit.priceAud || prefill.projectCost;
+              }
               
               // System Information from sales site visit
               prefill.systemSizeKw = fullSiteVisit.systemSizeKw || prefill.systemSizeKw;
@@ -962,7 +981,7 @@ export function OnFieldCalendarScreen() {
               
               if (day < 1 || day > daysInMonth) {
                 return (
-                  <div key={index} className="min-h-24 border rounded p-2 bg-gray-50 text-gray-400"></div>
+                  <div key={index} className="min-h-48 border rounded p-2 bg-gray-50 text-gray-400"></div>
                 );
               }
               
@@ -985,12 +1004,12 @@ export function OnFieldCalendarScreen() {
               return (
                 <div
                   key={index}
-                  className="min-h-24 border rounded p-2 bg-white"
+                  className="min-h-48 border rounded p-2 bg-white"
                 >
                   <div className="text-sm font-medium mb-1">{day}</div>
                   <div className="space-y-1">
                     {/* Show all items with electrician visits scheduled (site visits and projects) */}
-                    {allItems.slice(0, 2).map((item) => {
+                    {allItems.slice(0, 8).map((item) => {
                       // Check if it's a site visit or project
                       const isSiteVisit = 'electricianVisitDate' in item && !('status' in item);
                       const displayName = isSiteVisit 
@@ -1049,8 +1068,8 @@ export function OnFieldCalendarScreen() {
                         </div>
                       );
                     })}
-                    {totalItems > 2 && (
-                      <div className="text-xs text-gray-500">+{totalItems - 2} more</div>
+                    {totalItems > 8 && (
+                      <div className="text-xs text-gray-500 font-medium">+{totalItems - 8} more</div>
                     )}
                   </div>
                 </div>
