@@ -412,6 +412,7 @@ export function ProjectManagementScreen() {
     jobType: "",
     siteInspectionDate: "",
     siteInspectionTime: "",
+    siteInspectionStatus: "",
     priceAud: "",
     // System configuration
     systemType: "",
@@ -1933,6 +1934,7 @@ export function ProjectManagementScreen() {
           siteInspection: newProject.jobType === "Site Inspection" ? {
             date: newProject.siteInspectionDate,
             time: newProject.siteInspectionTime,
+            status: newProject.siteInspectionStatus || "Pending",
           } : undefined,
           jobDate: ["Stage One", "Stage Two", "Full System"].includes(newProject.jobType) ? newProject.jobDate : undefined,
           priceAud: newProject.priceAud,
@@ -2006,6 +2008,7 @@ export function ProjectManagementScreen() {
       jobType: "",
       siteInspectionDate: "",
       siteInspectionTime: "",
+      siteInspectionStatus: "",
       priceAud: "",
       systemType: "",
       pvSystemSizeKw: "",
@@ -2929,7 +2932,7 @@ export function ProjectManagementScreen() {
                 </div>
                 <div className="space-y-2">
                     <Label>Job Type</Label>
-                    <Select value={newProject.jobType} onValueChange={(v)=>setNewProject({ ...newProject, jobType: v })}>
+                    <Select value={newProject.jobType} onValueChange={(v)=>setNewProject({ ...newProject, jobType: v, siteInspectionStatus: v === "Site Inspection" ? "Pending" : newProject.siteInspectionStatus })}>
                       <SelectTrigger><SelectValue placeholder="Select job type" /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="Site Inspection">Site Inspection</SelectItem>
@@ -2985,16 +2988,22 @@ export function ProjectManagementScreen() {
 
                 {/* Conditional date/time based on Job Type */}
                 {newProject.jobType === "Site Inspection" && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Site Inspection Date</Label>
-                      <Input type="date" value={newProject.siteInspectionDate} onChange={(e)=>setNewProject({ ...newProject, siteInspectionDate: e.target.value })} />
-                  </div>
-                    <div className="space-y-2">
-                      <Label>Site Inspection Time</Label>
-                      <Input type="time" value={newProject.siteInspectionTime} onChange={(e)=>setNewProject({ ...newProject, siteInspectionTime: e.target.value })} />
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Site Inspection Date</Label>
+                        <Input type="date" value={newProject.siteInspectionDate} onChange={(e)=>setNewProject({ ...newProject, siteInspectionDate: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Site Inspection Time</Label>
+                        <Input type="time" value={newProject.siteInspectionTime} onChange={(e)=>setNewProject({ ...newProject, siteInspectionTime: e.target.value })} />
+                      </div>
                     </div>
+                    <div className="space-y-2">
+                      <Label>Site Inspection Status</Label>
+                      <Input value={newProject.siteInspectionStatus || "Pending"} readOnly placeholder="Enter site inspection status" />
                     </div>
+                  </>
                 )}
                 {["Stage One", "Stage Two", "Full System"].includes(newProject.jobType) && (
                   <div className="space-y-2">
@@ -3206,6 +3215,11 @@ export function ProjectManagementScreen() {
                     <Label>Site Inspection Time</Label>
                     <Input type="time" value={newProject.siteInspectionTime} onChange={(e)=>setNewProject({ ...newProject, siteInspectionTime: e.target.value })} />
                 </div>
+                </div>
+                {/* Site Inspection Status */}
+                <div className="space-y-2">
+                  <Label>Site Inspection Status</Label>
+                  <Input value={newProject.siteInspectionStatus || "Pending"} readOnly placeholder="Enter site inspection status" />
                 </div>
 
                 {/* Price */}
@@ -3767,6 +3781,14 @@ export function ProjectManagementScreen() {
                               className="text-sm"
                       />
                     </div>
+                          <div className="space-y-1">
+                            <Label className="text-gray-500 text-xs">Site Inspection Status</Label>
+                            <Input 
+                              value={selectedProject.projectDetails?.additionalInfo?.siteInspection?.status || "Pending"}
+                              readOnly
+                              className="text-sm"
+                            />
+                          </div>
                         </>
                       )}
                       {["Stage One", "Stage Two", "Full System"].includes(selectedProject.projectDetails?.additionalInfo?.jobType) && (
@@ -3959,6 +3981,209 @@ export function ProjectManagementScreen() {
                     </div>
                   </div>
                 )}
+
+                {/* Retailer Site Visit Details - Show for site-inspection projects */}
+                {selectedProject.status === "site-inspection" && (() => {
+                  // Load retailer site visit assessments
+                  let retailerSiteVisit: any = null;
+                  try {
+                    const assessmentsData = localStorage.getItem('xtr_retailer_site_visit_assessments');
+                    if (assessmentsData) {
+                      const assessments = JSON.parse(assessmentsData);
+                      if (Array.isArray(assessments) && assessments.length > 0) {
+                        // Find matching retailer site visit by customer name, email, or address
+                        const projectName = (selectedProject.name || '').toLowerCase().trim();
+                        const projectEmail = (selectedProject.projectDetails?.additionalInfo?.customerEmail || 
+                                            selectedProject.projectSnapshot?.customerEmail || '').toLowerCase().trim();
+                        const projectAddress = (selectedProject.projectDetails?.additionalInfo?.customerAddress || 
+                                              selectedProject.projectSnapshot?.customerAddress || '').toLowerCase().trim();
+                        
+                        retailerSiteVisit = assessments.find((assessment: any) => {
+                          const assessName = (assessment.customerName || '').toLowerCase().trim();
+                          const assessEmail = (assessment.customerEmail || '').toLowerCase().trim();
+                          const assessAddress = (assessment.propertyAddress || '').toLowerCase().trim();
+                          
+                          return (projectName && assessName && projectName === assessName) ||
+                                 (projectEmail && assessEmail && projectEmail === assessEmail) ||
+                                 (projectAddress && assessAddress && projectAddress === assessAddress);
+                        });
+                        
+                        // If not found by name/email/address, try to find by project ID in context
+                        if (!retailerSiteVisit) {
+                          // Check if any assessment has a matching project context
+                          for (const assessment of assessments) {
+                            // Try to match by customer name from form data
+                            if (assessment.customerName && projectName && 
+                                assessment.customerName.toLowerCase().trim() === projectName) {
+                              retailerSiteVisit = assessment;
+                              break;
+                            }
+                          }
+                        }
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Error loading retailer site visit:', error);
+                  }
+                  
+                  if (!retailerSiteVisit) {
+                    return null;
+                  }
+                  
+                  return (
+                    <div className="space-y-2 pt-4 border-t">
+                      <Label className="text-gray-700 font-medium">Retailer Site Visit Details</Label>
+                      <div className="grid grid-cols-2 gap-4 pl-4">
+                        {/* Visit Information */}
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Visit Date</Label>
+                          <Input value={retailerSiteVisit.visitDate || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Visit Time</Label>
+                          <Input value={retailerSiteVisit.visitTime || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Technician Name</Label>
+                          <Input value={retailerSiteVisit.technicianName || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Weather Conditions</Label>
+                          <Input value={retailerSiteVisit.weatherConditions || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        
+                        {/* Safety Information */}
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">Safety Hazards</Label>
+                          <Input value={Array.isArray(retailerSiteVisit.safetyHazards) ? retailerSiteVisit.safetyHazards.join(', ') : (retailerSiteVisit.safetyHazards || '')} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">Safety Notes</Label>
+                          <Textarea value={retailerSiteVisit.safetyNotes || ''} readOnly className="text-sm bg-gray-50" rows={2} />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">PPE Required</Label>
+                          <Input value={Array.isArray(retailerSiteVisit.ppeRequired) ? retailerSiteVisit.ppeRequired.join(', ') : (retailerSiteVisit.ppeRequired || '')} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">Emergency Contacts</Label>
+                          <Input value={retailerSiteVisit.emergencyContacts || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        
+                        {/* Electrical Information */}
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Main Panel Location</Label>
+                          <Input value={retailerSiteVisit.mainPanelLocation || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Panel Condition</Label>
+                          <Input value={retailerSiteVisit.panelCondition || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Available Amperage</Label>
+                          <Input value={retailerSiteVisit.availableAmperage || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Grounding System</Label>
+                          <Input value={retailerSiteVisit.groundingSystem || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">Electrical Hazards</Label>
+                          <Input value={Array.isArray(retailerSiteVisit.electricalHazards) ? retailerSiteVisit.electricalHazards.join(', ') : (retailerSiteVisit.electricalHazards || '')} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">Electrical Notes</Label>
+                          <Textarea value={retailerSiteVisit.electricalNotes || ''} readOnly className="text-sm bg-gray-50" rows={2} />
+                        </div>
+                        
+                        {/* Roof Information */}
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Roof Condition</Label>
+                          <Input value={retailerSiteVisit.roofCondition || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Roof Access</Label>
+                          <Input value={retailerSiteVisit.roofAccess || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Structural Integrity</Label>
+                          <Input value={retailerSiteVisit.structuralIntegrity || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Panel Count</Label>
+                          <Input value={retailerSiteVisit.panelCount || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">Mounting Points</Label>
+                          <Input value={Array.isArray(retailerSiteVisit.mountingPoints) ? retailerSiteVisit.mountingPoints.join(', ') : (retailerSiteVisit.mountingPoints || '')} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">Roof Hazards</Label>
+                          <Input value={Array.isArray(retailerSiteVisit.roofHazards) ? retailerSiteVisit.roofHazards.join(', ') : (retailerSiteVisit.roofHazards || '')} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">Roof Notes</Label>
+                          <Textarea value={retailerSiteVisit.roofNotes || ''} readOnly className="text-sm bg-gray-50" rows={2} />
+                        </div>
+                        
+                        {/* Installation Information */}
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Inverter Location</Label>
+                          <Input value={retailerSiteVisit.inverterLocation || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-gray-500 text-xs">Conduit Path</Label>
+                          <Input value={retailerSiteVisit.conduitPath || ''} readOnly className="text-sm bg-gray-50" />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">Special Requirements</Label>
+                          <Textarea value={retailerSiteVisit.specialRequirements || ''} readOnly className="text-sm bg-gray-50" rows={2} />
+                        </div>
+                        
+                        {/* Checklist */}
+                        {Array.isArray(retailerSiteVisit.checklist) && retailerSiteVisit.checklist.length > 0 && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500 text-xs">Checklist</Label>
+                            <div className="space-y-1 bg-gray-50 p-2 rounded">
+                              {retailerSiteVisit.checklist.map((item: any, index: number) => (
+                                <div key={index} className="flex items-center gap-2 text-sm">
+                                  <span className={item.checked ? 'text-green-600' : 'text-gray-400'}>
+                                    {item.checked ? '✓' : '○'}
+                                  </span>
+                                  <span>{item.item || item}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Notes and Recommendations */}
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">General Notes</Label>
+                          <Textarea value={retailerSiteVisit.generalNotes || ''} readOnly className="text-sm bg-gray-50" rows={3} />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">Recommendations</Label>
+                          <Textarea value={retailerSiteVisit.recommendations || ''} readOnly className="text-sm bg-gray-50" rows={3} />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-gray-500 text-xs">Next Steps</Label>
+                          <Textarea value={retailerSiteVisit.nextSteps || ''} readOnly className="text-sm bg-gray-50" rows={2} />
+                        </div>
+                        
+                        {/* Photos */}
+                        {Array.isArray(retailerSiteVisit.photos) && retailerSiteVisit.photos.length > 0 && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-gray-500 text-xs">Photos ({retailerSiteVisit.photos.length})</Label>
+                            <div className="text-sm text-gray-600">
+                              {retailerSiteVisit.photos.length} photo(s) attached
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* System Information */}
                       <div className="space-y-2">

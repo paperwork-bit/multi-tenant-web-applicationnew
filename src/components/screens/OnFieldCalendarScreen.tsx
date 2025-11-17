@@ -239,11 +239,9 @@ export function OnFieldCalendarScreen() {
               // In-house projects: only "scheduled" and "to-be-rescheduled"
               const isInHouse = status === "scheduled" || status === "to-be-rescheduled";
               
-              // Retailer projects: only "site-inspection", "stage-one", "stage-two", "full-system", "retailer-scheduled", "retailer-to-be-rescheduled"
+              // Retailer projects: only "site-inspection", "retailer-scheduled", "retailer-to-be-rescheduled"
+              // Exclude "stage-one", "stage-two", and "full-system" from calendar view
               const isRetailer = status === "site-inspection" || 
-                                status === "stage-one" || 
-                                status === "stage-two" || 
-                                status === "full-system" || 
                                 status === "retailer-scheduled" || 
                                 status === "retailer-to-be-rescheduled";
               
@@ -356,11 +354,9 @@ export function OnFieldCalendarScreen() {
               // In-house projects: only "scheduled" and "to-be-rescheduled"
               const isInHouse = status === "scheduled" || status === "to-be-rescheduled";
               
-              // Retailer projects: only "site-inspection", "stage-one", "stage-two", "full-system", "retailer-scheduled", "retailer-to-be-rescheduled"
+              // Retailer projects: only "site-inspection", "retailer-scheduled", "retailer-to-be-rescheduled"
+              // Exclude "stage-one", "stage-two", and "full-system" from calendar view
               const isRetailer = status === "site-inspection" || 
-                                status === "stage-one" || 
-                                status === "stage-two" || 
-                                status === "full-system" || 
                                 status === "retailer-scheduled" || 
                                 status === "retailer-to-be-rescheduled";
               
@@ -449,46 +445,52 @@ export function OnFieldCalendarScreen() {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   };
 
+  // Helper function to format date as YYYY-MM-DD in local timezone
+  const formatDateLocal = (dateInput: string | Date): string => {
+    if (typeof dateInput === 'string') {
+      // If it's already in YYYY-MM-DD format, return as is
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+        return dateInput;
+      }
+      // Otherwise, parse it
+      const date = new Date(dateInput);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    } else {
+      const year = dateInput.getFullYear();
+      const month = String(dateInput.getMonth() + 1).padStart(2, '0');
+      const day = String(dateInput.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+  };
+
   // Helper to get the display date for a project (electrician visit date, start date, or job date)
   const getProjectDate = (p: Project): string | null => {
     // Priority 1: Electrician visit date
     if (p.siteVisit?.electricianVisitDate && p.siteVisit.electricianVisitDate.trim() !== '') {
-      const date = typeof p.siteVisit.electricianVisitDate === 'string' 
-        ? p.siteVisit.electricianVisitDate 
-        : new Date(p.siteVisit.electricianVisitDate).toISOString();
-      return date.split('T')[0];
+      return formatDateLocal(p.siteVisit.electricianVisitDate);
     }
     
     // Priority 2: Start date from projectSnapshot
     if (p.projectSnapshot?.startDate && p.projectSnapshot.startDate.trim() !== '') {
-      const date = typeof p.projectSnapshot.startDate === 'string' 
-        ? p.projectSnapshot.startDate 
-        : new Date(p.projectSnapshot.startDate).toISOString();
-      return date.split('T')[0];
+      return formatDateLocal(p.projectSnapshot.startDate);
     }
     
     // Priority 3: Start date from project
     if (p.startDate && p.startDate.trim() !== '') {
-      const date = typeof p.startDate === 'string' 
-        ? p.startDate 
-        : new Date(p.startDate).toISOString();
-      return date.split('T')[0];
+      return formatDateLocal(p.startDate);
     }
     
     // Priority 4: Job date
     if (p.projectDetails?.additionalInfo?.jobDate && p.projectDetails.additionalInfo.jobDate.trim() !== '') {
-      const date = typeof p.projectDetails.additionalInfo.jobDate === 'string' 
-        ? p.projectDetails.additionalInfo.jobDate 
-        : new Date(p.projectDetails.additionalInfo.jobDate).toISOString();
-      return date.split('T')[0];
+      return formatDateLocal(p.projectDetails.additionalInfo.jobDate);
     }
     
     // Priority 5: Site inspection date
     if (p.projectDetails?.additionalInfo?.siteInspection?.date && p.projectDetails.additionalInfo.siteInspection.date.trim() !== '') {
-      const date = typeof p.projectDetails.additionalInfo.siteInspection.date === 'string' 
-        ? p.projectDetails.additionalInfo.siteInspection.date 
-        : new Date(p.projectDetails.additionalInfo.siteInspection.date).toISOString();
-      return date.split('T')[0];
+      return formatDateLocal(p.projectDetails.additionalInfo.siteInspection.date);
     }
     
     return null;
@@ -496,17 +498,16 @@ export function OnFieldCalendarScreen() {
 
   // Filter projects for a specific date (projects with allowed statuses)
   const getProjectsForDate = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0];
+    // Format date in local timezone to avoid UTC conversion issues
+    const dateStr = formatDateLocal(date);
     
     return projects.filter(p => {
       // Additional status check (projects should already be filtered, but double-check)
       const statusRaw = p.status || '';
       const status = statusRaw.toLowerCase().trim();
       const isInHouse = status === "scheduled" || status === "to-be-rescheduled";
+      // Exclude "stage-one", "stage-two", and "full-system" from calendar view
       const isRetailer = status === "site-inspection" || 
-                        status === "stage-one" || 
-                        status === "stage-two" || 
-                        status === "full-system" || 
                         status === "retailer-scheduled" || 
                         status === "retailer-to-be-rescheduled";
       if (!isInHouse && !isRetailer) {
@@ -525,14 +526,13 @@ export function OnFieldCalendarScreen() {
 
   // Filter site visits for a specific date
   const getSiteVisitsForDate = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0];
+    // Format date in local timezone to avoid UTC conversion issues
+    const dateStr = formatDateLocal(date);
     
     return siteVisits.filter(v => {
       if (!v.electricianVisitDate) return false;
       
-      const visitDateStr = typeof v.electricianVisitDate === 'string' 
-        ? v.electricianVisitDate.split('T')[0] 
-        : new Date(v.electricianVisitDate).toISOString().split('T')[0];
+      const visitDateStr = formatDateLocal(v.electricianVisitDate);
       
       return visitDateStr === dateStr;
     });
@@ -546,11 +546,9 @@ export function OnFieldCalendarScreen() {
     // In-house projects: only "scheduled" and "to-be-rescheduled"
     const isInHouse = status === "scheduled" || status === "to-be-rescheduled";
     
-    // Retailer projects: only "site-inspection", "stage-one", "stage-two", "full-system", "retailer-scheduled", "retailer-to-be-rescheduled"
+    // Retailer projects: only "site-inspection", "retailer-scheduled", "retailer-to-be-rescheduled"
+    // Exclude "stage-one", "stage-two", and "full-system" from calendar view
     const isRetailer = status === "site-inspection" || 
-                      status === "stage-one" || 
-                      status === "stage-two" || 
-                      status === "full-system" || 
                       status === "retailer-scheduled" || 
                       status === "retailer-to-be-rescheduled";
     
@@ -1213,27 +1211,6 @@ export function OnFieldCalendarScreen() {
                   <span style={{ width: '8px', height: '8px', backgroundColor: '#8b5cf6', borderRadius: '50%', display: 'inline-block', marginLeft: '2px' }}></span>
                 </div>
                 <span className="text-xs text-gray-700" style={{ borderLeft: '3px solid #8b5cf6', paddingLeft: '8px', backgroundColor: '#faf5ff', padding: '4px 8px', borderRadius: '4px' }}>⚡ Site Inspection (Purple)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
-                  <span style={{ width: '6px', height: '6px', backgroundColor: '#ec4899', borderRadius: '50%', display: 'inline-block' }}></span>
-                  <span style={{ width: '8px', height: '8px', backgroundColor: '#ec4899', borderRadius: '50%', display: 'inline-block', marginLeft: '2px' }}></span>
-                </div>
-                <span className="text-xs text-gray-700" style={{ borderLeft: '3px solid #ec4899', paddingLeft: '8px', backgroundColor: '#fdf2f8', padding: '4px 8px', borderRadius: '4px' }}>⚡ Stage One (Pink)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
-                  <span style={{ width: '6px', height: '6px', backgroundColor: '#f97316', borderRadius: '50%', display: 'inline-block' }}></span>
-                  <span style={{ width: '8px', height: '8px', backgroundColor: '#f97316', borderRadius: '50%', display: 'inline-block', marginLeft: '2px' }}></span>
-                </div>
-                <span className="text-xs text-gray-700" style={{ borderLeft: '3px solid #f97316', paddingLeft: '8px', backgroundColor: '#fff7ed', padding: '4px 8px', borderRadius: '4px' }}>⚡ Stage Two (Orange)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
-                  <span style={{ width: '6px', height: '6px', backgroundColor: '#14b8a6', borderRadius: '50%', display: 'inline-block' }}></span>
-                  <span style={{ width: '8px', height: '8px', backgroundColor: '#14b8a6', borderRadius: '50%', display: 'inline-block', marginLeft: '2px' }}></span>
-                </div>
-                <span className="text-xs text-gray-700" style={{ borderLeft: '3px solid #14b8a6', paddingLeft: '8px', backgroundColor: '#f0fdfa', padding: '4px 8px', borderRadius: '4px' }}>⚡ Full System (Teal)</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1">

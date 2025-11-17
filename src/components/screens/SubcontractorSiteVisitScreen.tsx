@@ -271,6 +271,10 @@ export function SubcontractorSiteVisitScreen() {
         recommendations: "",
         nextSteps: "",
       });
+      
+      // Clear prefill data from localStorage
+      localStorage.removeItem('xtr_retailer_site_visit_prefill');
+      localStorage.removeItem('xtr_retailer_site_visit_context');
     } catch {}
   };
 
@@ -288,6 +292,50 @@ export function SubcontractorSiteVisitScreen() {
       localStorage.setItem('xtr_retailer_site_visit_assessments', JSON.stringify(next));
       setAssessments(next);
     } catch {}
+    
+    // Update project's Site Inspection Status to "Completed"
+    try {
+      const contextRaw = localStorage.getItem('xtr_retailer_site_visit_context');
+      if (contextRaw) {
+        const context = JSON.parse(contextRaw);
+        if (context.projectId) {
+          const projectsData = localStorage.getItem('xtr_projects');
+          if (projectsData) {
+            const projects = JSON.parse(projectsData);
+            if (Array.isArray(projects)) {
+              const projectIndex = projects.findIndex((p: any) => p.id === context.projectId);
+              if (projectIndex !== -1) {
+                const project = projects[projectIndex];
+                // Update the site inspection status to "Completed"
+                const updatedProject = {
+                  ...project,
+                  projectDetails: {
+                    ...(project.projectDetails || {}),
+                    additionalInfo: {
+                      ...(project.projectDetails?.additionalInfo || {}),
+                      siteInspection: {
+                        ...(project.projectDetails?.additionalInfo?.siteInspection || {}),
+                        status: "Completed"
+                      }
+                    }
+                  }
+                };
+                projects[projectIndex] = updatedProject;
+                localStorage.setItem('xtr_projects', JSON.stringify(projects));
+                
+                // Dispatch event to notify other parts of the app
+                window.dispatchEvent(new CustomEvent('xtr-projects-updated'));
+                
+                console.log('Updated project Site Inspection Status to "Completed" for project:', context.projectId);
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error updating project Site Inspection Status:', error);
+    }
+    
     // Remove drafts
     try {
       if (isEditingDraft) {
@@ -300,8 +348,29 @@ export function SubcontractorSiteVisitScreen() {
     } catch {}
     
     // Clear the form after successful submission
-    setFormData(prev => ({
-      ...prev,
+    setFormData({
+      customerName: "",
+      customerEmail: "",
+      customerPhone: "",
+      propertyAddress: "",
+      location: "",
+      clientType: "",
+      clientName: "",
+      jobType: "",
+      siteInspectionDate: "",
+      siteInspectionTime: "",
+      priceAud: "",
+      systemSizeKw: "",
+      inverterSizeKw: "",
+      inverterBrand: "",
+      inverterType: "",
+      panelBrand: "",
+      panelModuleWatts: "",
+      houseStorey: "",
+      roofType: "",
+      accessSecondStorey: "",
+      accessToInverter: "",
+      meterPhase: "",
       visitDate: "",
       visitTime: "",
       technicianName: "",
@@ -340,7 +409,11 @@ export function SubcontractorSiteVisitScreen() {
       generalNotes: "",
       recommendations: "",
       nextSteps: "",
-    }));
+    });
+    
+    // Clear prefill data from localStorage
+    localStorage.removeItem('xtr_retailer_site_visit_prefill');
+    localStorage.removeItem('xtr_retailer_site_visit_context');
     
     alert("Retailer Site Visit Assessment submitted successfully!");
   };
