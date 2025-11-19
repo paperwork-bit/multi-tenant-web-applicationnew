@@ -10,8 +10,6 @@ import { Textarea } from "../ui/textarea";
 import { Checkbox } from "../ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Calendar, ChevronLeft, ChevronRight, Download, Plus, Edit, Trash2, X, Save, ChevronDown, MessageSquare, RefreshCw } from "lucide-react";
-import { db, firebaseEnabled } from "../../lib/firebase";
-import { collection, onSnapshot, addDoc, setDoc, doc, query, where, getDocs, deleteDoc } from "firebase/firestore";
 
 // Types
 type Priority = "low" | "medium" | "high";
@@ -357,22 +355,6 @@ export function ProjectManagementScreen() {
   const [resources, setResources] = useState<Resource[]>([]);
   const [userEmail, setUserEmail] = useState<string>("");
   const [userName, setUserName] = useState<string>("");
-  const [showSyncStatus, setShowSyncStatus] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<{
-    firestoreEnabled: boolean;
-    localProjectCount: number;
-    firestoreProjectCount: number;
-    lastSyncTime: string | null;
-    lastSyncEvent: string | null;
-    recentChanges: string[];
-  }>({
-    firestoreEnabled: false,
-    localProjectCount: 0,
-    firestoreProjectCount: 0,
-    lastSyncTime: null,
-    lastSyncEvent: null,
-    recentChanges: []
-  });
   
   // Comments state
   const [newComment, setNewComment] = useState("");
@@ -569,256 +551,13 @@ export function ProjectManagementScreen() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Sync projects with Firestore for cross-device synchronization
-  const firestoreHasDataRef = useRef(false);
-  const isSyncingRef = useRef(false);
   
-  // Cleanup function to remove unnamed/invalid projects from localStorage and Firestore
-  const cleanupInvalidProjects = async () => {
-    try {
-      // Clean up localStorage
-      const localProjects = localStorage.getItem('xtr_projects');
-      if (localProjects) {
-        const parsed = JSON.parse(localProjects);
-        if (Array.isArray(parsed)) {
-          const validProjects = parsed.filter(isValidProject);
-          const removedCount = parsed.length - validProjects.length;
-          
-          if (removedCount > 0) {
-            localStorage.setItem('xtr_projects', JSON.stringify(validProjects));
-            console.log(`[Cleanup] Removed ${removedCount} invalid/unnamed project(s) from localStorage`);
-            
-            // Also remove from Firestore if enabled
-            if (firebaseEnabled && db) {
-              const invalidProjects = parsed.filter(p => !isValidProject(p));
-              const deletePromises = invalidProjects
-                .filter(p => p.id && p.id.trim() !== '')
-                .map(p => deleteDoc(doc(db, 'projects', p.id))
-                  .then(() => {
-                    console.log(`[Cleanup] Deleted invalid project from Firestore: ${p.id} - ${p.name || 'unnamed'}`);
-                  })
-                  .catch((err) => {
-                    console.error(`[Cleanup] Error deleting invalid project ${p.id}:`, err);
-                  }));
-              
-              await Promise.all(deletePromises);
-              console.log(`[Cleanup] Cleaned up ${invalidProjects.length} invalid project(s) from Firestore`);
-            }
-            
-            setProjects(validProjects);
-            return removedCount;
-          }
-        }
-      }
-      return 0;
-    } catch (error) {
-      console.error('[Cleanup] Error cleaning up invalid projects:', error);
-      return 0;
-    }
-  };
 
-  // Check sync status - fetch current state from Firestore and compare with local
-  const checkSyncStatus = async () => {
-    try {
-      const localProjects = localStorage.getItem('xtr_projects');
-      const localProjectsList: Project[] = localProjects ? JSON.parse(localProjects) : [];
-      const localValidProjects = localProjectsList.filter(isValidProject);
-      
-      if (firebaseEnabled && db) {
-        // Fetch from Firestore
-        const projectsSnapshot = await getDocs(collection(db, 'projects'));
-        const firestoreProjects: Project[] = [];
-        
-        projectsSnapshot.forEach((d) => {
-          const data = d.data();
-          firestoreProjects.push({
-            ...data,
-            id: d.id,
-          } as Project);
-        });
-        
-        const firestoreValidProjects = firestoreProjects.filter(isValidProject);
-        
-        // Find projects in Firestore but not in local
-        const localIds = new Set(localValidProjects.map(p => p.id).filter(Boolean));
-        const firestoreIds = new Set(firestoreValidProjects.map(p => p.id).filter(Boolean));
-        const inFirestoreNotLocal = firestoreValidProjects.filter(p => p.id && !localIds.has(p.id));
-        const inLocalNotFirestore = localValidProjects.filter(p => p.id && !firestoreIds.has(p.id));
-        
-        // Update sync status
-        setSyncStatus({
-          firestoreEnabled: true,
-          localProjectCount: localValidProjects.length,
-          firestoreProjectCount: firestoreValidProjects.length,
-          lastSyncTime: new Date().toLocaleString(),
-          lastSyncEvent: 'Status checked',
-          recentChanges: [
-            `Local projects: ${localValidProjects.length}`,
-            `Firestore projects: ${firestoreValidProjects.length}`,
-            inFirestoreNotLocal.length > 0 ? `Projects in Firestore but not local: ${inFirestoreNotLocal.length} (${inFirestoreNotLocal.map(p => p.name).join(', ')})` : 'All Firestore projects are in local',
-            inLocalNotFirestore.length > 0 ? `Projects in local but not Firestore: ${inLocalNotFirestore.length} (${inLocalNotFirestore.map(p => p.name).join(', ')})` : 'All local projects are in Firestore',
-          ]
-        });
-        
-        console.log('[Sync Status]', {
-          local: localValidProjects.length,
-          firestore: firestoreValidProjects.length,
-          inFirestoreNotLocal: inFirestoreNotLocal.map(p => p.name),
-          inLocalNotFirestore: inLocalNotFirestore.map(p => p.name)
-        });
-      } else {
-        setSyncStatus({
-          firestoreEnabled: false,
-          localProjectCount: localValidProjects.length,
-          firestoreProjectCount: 0,
-          lastSyncTime: null,
-          lastSyncEvent: 'Firebase not enabled',
-          recentChanges: ['Firebase is not configured. Projects are stored locally only.']
-        });
-      }
-    } catch (error) {
-      console.error('[Sync Status] Error checking sync status:', error);
-      setSyncStatus(prev => ({
-        ...prev,
-        lastSyncEvent: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
-      }));
-    }
-  };
 
-  // Manual refresh function to force reload from Firestore
-  const handleManualRefresh = async () => {
-    if (!firebaseEnabled || !db) {
-      alert('Firebase is not enabled. Projects are stored locally only and won\'t sync across devices.');
-      return;
-    }
-    
-    try {
-      console.log('[ProjectManagement] Manual refresh: Fetching from Firestore...');
-      isSyncingRef.current = true;
-      
-      // First, clean up invalid projects
-      const removedCount = await cleanupInvalidProjects();
-      if (removedCount > 0) {
-        console.log(`[ProjectManagement] Manual refresh: Cleaned up ${removedCount} invalid/unnamed project(s)`);
-      }
-      
-      // Fetch all projects from Firestore
-      const projectsSnapshot = await getDocs(collection(db, 'projects'));
-      const firestoreProjects: Project[] = [];
-      
-      projectsSnapshot.forEach((d) => {
-        const data = d.data();
-        firestoreProjects.push({
-          ...data,
-          id: d.id,
-        } as Project);
-      });
-      
-      console.log(`[ProjectManagement] Manual refresh: Found ${firestoreProjects.length} projects in Firestore`);
-      
-      // Filter out invalid projects from Firestore
-      const validFirestoreProjects = firestoreProjects.filter(isValidProject);
-      if (validFirestoreProjects.length < firestoreProjects.length) {
-        const invalidCount = firestoreProjects.length - validFirestoreProjects.length;
-        console.log(`[ProjectManagement] Manual refresh: Filtered out ${invalidCount} invalid/unnamed project(s) from Firestore`);
-        
-        // Delete invalid projects from Firestore
-        const invalidProjects = firestoreProjects.filter(p => !isValidProject(p));
-        await Promise.all(
-          invalidProjects
-            .filter(p => p.id && p.id.trim() !== '')
-            .map(p => deleteDoc(doc(db, 'projects', p.id))
-              .then(() => {
-                console.log(`[ProjectManagement] Deleted invalid project from Firestore: ${p.id} - ${p.name || 'unnamed'}`);
-              })
-              .catch((err) => {
-                console.error(`[ProjectManagement] Error deleting invalid project ${p.id}:`, err);
-              }))
-        );
-      }
-      
-      // Debug: Log all Firestore projects with stage-one status
-      const firestoreStageOne = validFirestoreProjects.filter(p => p.status === 'stage-one');
-      console.log(`[ProjectManagement] Manual refresh: Found ${firestoreStageOne.length} stage-one projects in Firestore:`, 
-        firestoreStageOne.map(p => ({ id: p.id, name: p.name, status: p.status }))
-      );
-      
-      // Debug: Check for Scott Megens in Firestore
-      const scottInFirestore = validFirestoreProjects.filter(p => 
-        (p.name || '').toLowerCase().includes('scott') || (p.name || '').toLowerCase().includes('megens')
-      );
-      if (scottInFirestore.length > 0) {
-        console.log(`[ProjectManagement] Manual refresh: Found Scott Megens in Firestore:`, scottInFirestore.map(p => ({ 
-          id: p.id, 
-          name: p.name, 
-          status: p.status 
-        })));
-      }
-      
-      // Debug: Check for Arthur Romas in Firestore
-      const arthurInFirestore = validFirestoreProjects.filter(p => 
-        (p.name || '').toLowerCase().includes('arthur') || (p.name || '').toLowerCase().includes('romas')
-      );
-      if (arthurInFirestore.length > 0) {
-        console.log(`[ProjectManagement] Manual refresh: ✅ Found Arthur Romas in Firestore:`, arthurInFirestore.map(p => ({ 
-          id: p.id, 
-          name: p.name, 
-          status: p.status 
-        })));
-      } else {
-        console.log(`[ProjectManagement] Manual refresh: ⚠️ Arthur Romas NOT found in Firestore (${validFirestoreProjects.length} total projects)`);
-      }
-      
-      // Merge with local projects
-      const localProjects = localStorage.getItem('xtr_projects');
-      const localProjectsList: Project[] = localProjects ? JSON.parse(localProjects) : [];
-      
-      // Create merged list (Firestore takes precedence)
-      const mergedProjects: Project[] = [];
-      const seenIds = new Set<string>();
-      
-      // First, add all valid Firestore projects
-      validFirestoreProjects.forEach((p) => {
-        if (p.id && !seenIds.has(p.id) && isValidProject(p)) {
-          seenIds.add(p.id);
-          mergedProjects.push(p);
-        }
-      });
-      
-      // Then, add local projects not in Firestore
-      localProjectsList.forEach((p) => {
-        if (p.id && !seenIds.has(p.id) && isValidProject(p)) {
-          seenIds.add(p.id);
-          mergedProjects.push(p);
-          // Also sync this local project to Firestore
-          setDoc(doc(db, 'projects', p.id), p as any, { merge: true }).catch((err) => {
-            console.error('Error syncing local project to Firestore:', err);
-          });
-        }
-      });
-      
-      // Filter valid projects (double-check)
-      const validProjects = mergedProjects.filter(isValidProject);
-      
-      // Update state and localStorage
-      setProjects(validProjects);
-      localStorage.setItem('xtr_projects', JSON.stringify(validProjects));
-      
-      console.log(`[ProjectManagement] Manual refresh: Synced ${validProjects.length} projects`);
-      alert(`Refreshed! Found ${firestoreProjects.length} projects in Firestore, ${validProjects.length} after validation.`);
-      
-      // Dispatch event
-      window.dispatchEvent(new CustomEvent('xtr-projects-updated'));
-    } catch (error) {
-      console.error('[ProjectManagement] Manual refresh error:', error);
-      alert('Error refreshing projects. Check console for details.');
-    } finally {
-      isSyncingRef.current = false;
-    }
-  };
   
+  /*
   useEffect(() => {
-    if (!firebaseEnabled || !db) {
+    if (!cloudSyncEnabled || !db) {
       console.log('[ProjectManagement] Firestore not enabled, using localStorage only');
       return;
     }
@@ -1202,6 +941,11 @@ export function ProjectManagementScreen() {
     return () => {
       unsub();
     };
+  }, []);
+  */
+
+  useEffect(() => {
+    console.log('[ProjectManagement] Firebase sync removed; using localStorage only');
   }, []);
 
   // Load resources from localStorage and Firestore
@@ -1776,30 +1520,6 @@ export function ProjectManagementScreen() {
       localStorage.setItem('xtr_projects', JSON.stringify(validProjects));
       console.log(`[ProjectManagement] Saved ${validProjects.length} projects to localStorage`);
       
-      // Save to Firestore if enabled
-      if (firebaseEnabled && db) {
-        // Don't use isSyncingRef here as it prevents saves during sync
-        try {
-          const savePromises = validProjects.map(async (p) => {
-            if (p.id && p.id.trim() !== '') {
-              try {
-                await setDoc(doc(db, 'projects', p.id), p as any, { merge: true });
-                console.log(`[ProjectManagement] Saved project to Firestore: ${p.id} - ${p.name}`);
-              } catch (err) {
-                console.error(`Error saving project ${p.id} to Firestore:`, err);
-              }
-            }
-          });
-          
-          await Promise.all(savePromises);
-          console.log(`[ProjectManagement] Synced ${validProjects.length} projects to Firestore`);
-        } catch (error) {
-          console.error('[ProjectManagement] Error syncing projects to Firestore:', error);
-        }
-      } else {
-        console.warn('[ProjectManagement] Firestore not enabled - projects saved to localStorage only');
-      }
-      
       // Dispatch event to notify other components
       window.dispatchEvent(new CustomEvent('xtr-projects-updated'));
     } catch (error) {
@@ -2270,31 +1990,10 @@ export function ProjectManagementScreen() {
           <p className="text-gray-600 mt-1">Schedule and manage installations.</p>
         </div>
         <div className="flex gap-3 items-center">
-          {firebaseEnabled && db ? (
-            <>
-              <div className="flex items-center gap-2 text-sm text-green-600 cursor-pointer" onClick={() => { setShowSyncStatus(true); checkSyncStatus(); }} title="Click to check sync status">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span>Sync Active</span>
-              </div>
-              {currentView !== "calendar" && (
-                <>
-                  <Button variant="outline" onClick={handleManualRefresh} title="Refresh projects from Firestore">
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Refresh Projects
-                  </Button>
-                  <Button variant="outline" onClick={() => { setShowSyncStatus(true); checkSyncStatus(); }} title="Check sync status between devices">
-                    <MessageSquare className="w-4 h-4 mr-2" />
-                    Sync Status
-                  </Button>
-                </>
-              )}
-            </>
-          ) : (
-            <div className="flex items-center gap-2 text-sm text-orange-600">
-              <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-              <span>Local Only (No Sync)</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2 text-sm text-orange-600">
+            <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+            <span>Local Only (Sync disabled)</span>
+          </div>
           <Button variant="outline" onClick={handleExportSchedule}>
             <Download className="w-4 h-4 mr-2" />
             Export Schedule
@@ -5151,114 +4850,6 @@ export function ProjectManagementScreen() {
               </DialogFooter>
             </>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Sync Status Dialog */}
-      <Dialog open={showSyncStatus} onOpenChange={setShowSyncStatus}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Sync Status - Cross-Device Synchronization</DialogTitle>
-            <DialogDescription>
-              Check if data is syncing properly between India and Australia
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {/* Connection Status */}
-            <div className="p-4 border rounded-lg">
-              <h3 className="font-semibold mb-2">Connection Status</h3>
-              <div className="flex items-center gap-2">
-                {syncStatus.firestoreEnabled ? (
-                  <>
-                    <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-green-600 font-medium">Firebase Connected</span>
-                  </>
-                ) : (
-                  <>
-                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                    <span className="text-red-600 font-medium">Firebase Not Connected</span>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Project Counts */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 border rounded-lg">
-                <h3 className="font-semibold mb-2">Local Projects</h3>
-                <p className="text-3xl font-bold text-blue-600">{syncStatus.localProjectCount}</p>
-                <p className="text-sm text-gray-500 mt-1">Projects in this browser</p>
-              </div>
-              <div className="p-4 border rounded-lg">
-                <h3 className="font-semibold mb-2">Firestore Projects</h3>
-                <p className="text-3xl font-bold text-green-600">{syncStatus.firestoreProjectCount}</p>
-                <p className="text-sm text-gray-500 mt-1">Projects in cloud (shared)</p>
-              </div>
-            </div>
-
-            {/* Sync Status */}
-            {syncStatus.firestoreEnabled && (
-              <div className="p-4 border rounded-lg">
-                <h3 className="font-semibold mb-2">Sync Status</h3>
-                {syncStatus.localProjectCount === syncStatus.firestoreProjectCount ? (
-                  <div className="flex items-center gap-2 text-green-600">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>✅ Projects are in sync</span>
-                  </div>
-                ) : syncStatus.localProjectCount < syncStatus.firestoreProjectCount ? (
-                  <div className="flex items-center gap-2 text-orange-600">
-                    <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                    <span>⚠️ {syncStatus.firestoreProjectCount - syncStatus.localProjectCount} project(s) in Firestore but not in local. Click "Refresh Projects" to sync.</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-blue-600">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <span>ℹ️ {syncStatus.localProjectCount - syncStatus.firestoreProjectCount} project(s) in local but not in Firestore. They will be uploaded automatically.</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Last Sync Time */}
-            {syncStatus.lastSyncTime && (
-              <div className="p-4 border rounded-lg">
-                <h3 className="font-semibold mb-2">Last Check</h3>
-                <p className="text-sm text-gray-600">{syncStatus.lastSyncTime}</p>
-                <p className="text-xs text-gray-500 mt-1">{syncStatus.lastSyncEvent}</p>
-              </div>
-            )}
-
-            {/* Recent Changes */}
-            {syncStatus.recentChanges.length > 0 && (
-              <div className="p-4 border rounded-lg">
-                <h3 className="font-semibold mb-2">Sync Details</h3>
-                <ul className="space-y-1 text-sm">
-                  {syncStatus.recentChanges.map((change, index) => (
-                    <li key={index} className="text-gray-600">• {change}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Instructions */}
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <h3 className="font-semibold mb-2 text-blue-900">How to Verify Sync</h3>
-              <ol className="list-decimal list-inside space-y-1 text-sm text-blue-800">
-                <li>Have your team member in Australia check their sync status</li>
-                <li>Compare the "Firestore Projects" count - it should be the same for both</li>
-                <li>If counts differ, click "Refresh Projects" on both devices</li>
-                <li>Check the "Sync Details" section to see which projects are missing</li>
-                <li>Projects added on one device should appear on the other within 1-2 seconds</li>
-              </ol>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSyncStatus(false)}>Close</Button>
-            <Button onClick={() => { checkSyncStatus(); }}>Refresh Status</Button>
-            {firebaseEnabled && db && (
-              <Button onClick={() => { handleManualRefresh(); setShowSyncStatus(false); }}>Sync Now</Button>
-            )}
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

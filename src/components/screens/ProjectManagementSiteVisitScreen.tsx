@@ -1,6 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { db, firebaseEnabled } from "../../lib/firebase";
-import { onSnapshot, collection } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -113,16 +111,7 @@ export function ProjectManagementSiteVisitScreen() {
     loadLocal();
     const onStorage = (e: StorageEvent) => { if (e.key === 'xtr_site_visits') loadLocal(); };
     window.addEventListener('storage', onStorage);
-    let unsub: (() => void) | undefined;
-    if (firebaseEnabled && db) {
-      try {
-        unsub = onSnapshot(collection(db, 'site_visits'), (snap) => {
-          const arr = snap.docs.map((d, i) => normalize(d.data(), i));
-          if (Array.isArray(arr)) setSalesSiteVisits(arr as any);
-        });
-      } catch {}
-    }
-    return () => { window.removeEventListener('storage', onStorage); if (typeof unsub === 'function') unsub(); };
+    return () => { window.removeEventListener('storage', onStorage); };
   }, []);
 
   // Fallback sample data when empty
@@ -242,16 +231,7 @@ export function ProjectManagementSiteVisitScreen() {
     loadLocal();
     const onStorage = (e: StorageEvent) => { if (e.key === 'xtr_onfield_assessments') loadLocal(); };
     window.addEventListener('storage', onStorage);
-    let unsub: (() => void) | undefined;
-    if (firebaseEnabled && db) {
-      try {
-        unsub = onSnapshot(collection(db, 'onfield_site_visits'), (snap) => {
-          const arr = snap.docs.map((d, i) => normalize(d.data(), i));
-          if (Array.isArray(arr)) setOnFieldSiteVisits(arr as any);
-        });
-      } catch {}
-    }
-    return () => { window.removeEventListener('storage', onStorage); if (typeof unsub === 'function') unsub(); };
+    return () => { window.removeEventListener('storage', onStorage); };
   }, []);
 
   // Mock data fallback for on-field site visits

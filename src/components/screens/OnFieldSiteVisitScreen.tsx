@@ -1,6 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { db, firebaseEnabled } from "../../lib/firebase";
-import { addDoc, collection, onSnapshot } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -409,16 +407,7 @@ export function OnFieldSiteVisitScreen() {
     loadLocal();
     const onStorage = (e: StorageEvent) => { if (e.key === 'xtr_onfield_assessments') loadLocal(); };
     window.addEventListener('storage', onStorage);
-    let unsub: (() => void) | undefined;
-    if (firebaseEnabled && db) {
-      try {
-        unsub = onSnapshot(collection(db, 'onfield_site_visits'), (snap) => {
-          const arr = snap.docs.map((d) => d.data());
-          if (Array.isArray(arr)) setAssessments(arr as any);
-        });
-      } catch {}
-    }
-    return () => { window.removeEventListener('storage', onStorage); if (typeof unsub === 'function') unsub(); };
+    return () => { window.removeEventListener('storage', onStorage); };
   }, []);
 
   const saveDraft = () => {
@@ -450,12 +439,6 @@ export function OnFieldSiteVisitScreen() {
       const next = Array.isArray(prev) ? [record, ...prev] : [record];
       localStorage.setItem('xtr_onfield_assessments', JSON.stringify(next));
       setAssessments(next);
-    } catch {}
-    // Also persist to Firestore for PM visibility across devices
-    try {
-      if (firebaseEnabled && db) {
-        addDoc(collection(db, 'onfield_site_visits'), record).catch(() => {});
-      }
     } catch {}
     // Remove drafts for this lead (covers both edited-draft and submit-from-return flows)
     try {

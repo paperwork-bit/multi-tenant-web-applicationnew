@@ -55,6 +55,8 @@ temp/
 
 # Optional npm cache directory
 .npm
+.npm-cache/
+.wrangler/
 
 # Optional eslint cache
 .eslintcache

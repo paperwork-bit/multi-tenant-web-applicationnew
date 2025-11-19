@@ -1,6 +1,4 @@
-import React, { useEffect, useRef, useState, useRef as useReactRef } from "react";
-import { db, firebaseEnabled } from "../../lib/firebase";
-import { collection, onSnapshot, addDoc, updateDoc, doc } from "firebase/firestore";
+import React, { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -202,74 +200,6 @@ export function ResourceManagementScreen() {
     }
   }, [resources]);
 
-  // Firestore realtime sync if Firebase is enabled
-  const firestoreHasDataRef = useReactRef<boolean>();
-  if (firestoreHasDataRef.current === undefined) firestoreHasDataRef.current = false;
-  useEffect(() => {
-    if (!firebaseEnabled || !db) return;
-    console.log('[ResourceManagement] Firestore enabled. Subscribing to resources...');
-    const unsub = onSnapshot(collection(db, 'resources'), (snap) => {
-      console.log('[ResourceManagement] Snapshot received. Docs:', snap.size);
-      const list: Resource[] = snap.docs.map((d) => {
-        const data: any = d.data();
-        return {
-          id: Number(data.id) || Date.now(),
-          docId: d.id,
-          name: data.name || '',
-          role: data.role || '',
-          department: data.department || '',
-          employeeId: data.employeeId || '',
-          email: data.email || '',
-          phone: data.phone || '',
-          location: data.location || '',
-          skills: Array.isArray(data.skills) ? data.skills : (data.skills ? String(data.skills).split(',').map((s: string) => s.trim()) : []),
-          currentProject: data.currentProject,
-          joinDate: data.joinDate || '',
-          status: (data.status as any) || 'active',
-          performance: Number(data.performance ?? 80),
-          completedProjects: Number(data.completedProjects ?? 0),
-          certifications: Array.isArray(data.certifications) ? data.certifications : [],
-          payRate: Number(data.payRate ?? 0),
-          payType: (data.payType as any) || 'hourly',
-          weeklyHours: Number(data.weeklyHours ?? 40),
-          lastActive: data.lastActive || new Date().toISOString().split('T')[0],
-          availability: (data.availability as any) || 'available',
-          createdBy: data.createdBy || '',
-        };
-      });
-      if (list.length === 0 && !firestoreHasDataRef.current) {
-        // Do not clobber local data with an empty remote snapshot
-        try {
-          const saved = localStorage.getItem('xtr_resources');
-          if (saved) {
-            const parsed: Resource[] = JSON.parse(saved);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setResources(parsed);
-              // Bootstrap Firestore with local copy to make persistence durable
-              Promise.all(
-                parsed.map((r) => addDoc(collection(db, 'resources'), r as any).catch(() => null))
-              ).then(() => {
-                console.log('[ResourceManagement] Bootstrapped Firestore with local resources');
-              });
-            }
-            return;
-          }
-        } catch (e) {
-          console.warn('[ResourceManagement] No Firestore data and failed to read local backup', e);
-        }
-        setResources([]);
-        return;
-      }
-      setResources(list);
-      firestoreHasDataRef.current = list.length > 0;
-      // Also persist Firestore data locally for refresh/offline
-      try {
-        localStorage.setItem('xtr_resources', JSON.stringify(list));
-      } catch {}
-    });
-    return () => unsub();
-  }, []);
-
   const departments = ["all", "Sales", "On-Field", "Project Management", "Operations"];
 
   const filteredResources = resources.filter(resource => {
@@ -329,13 +259,7 @@ export function ResourceManagementScreen() {
       try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
       return next;
     });
-    if (firebaseEnabled && db && target.docId) {
-      updateDoc(doc(db, 'resources', target.docId), { status: toStatus } as any)
-        .then(() => console.log('[ResourceManagement] Status updated to', toStatus))
-        .catch((e) => { console.error('[ResourceManagement] Firestore toggle failed', e); applyLocal(); });
-    } else {
-      applyLocal();
-    }
+    applyLocal();
   };
 
   const handleDelete = (id: number) => {
@@ -456,47 +380,19 @@ export function ResourceManagementScreen() {
       createdBy: ''
     };
 
-    // Firestore write when enabled, else local state
-    if (firebaseEnabled && db) {
-      console.log('[ResourceManagement] Attempting Firestore write...');
-      if (selectedResource?.docId) {
-        updateDoc(doc(db, 'resources', selectedResource.docId), newData as any)
-          .then(() => console.log('[ResourceManagement] Firestore update success'))
-          .catch((e) => {
-          console.error('[ResourceManagement] Firestore update failed, applying local state', e);
-          setResources(prev => {
-            const next = prev.map(r => r.id === selectedResource.id ? newData : r);
-            try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
-            return next;
-          });
-        });
-      } else {
-        addDoc(collection(db, 'resources'), newData as any)
-          .then(() => console.log('[ResourceManagement] Firestore add success'))
-          .catch((e) => {
-          console.error('[ResourceManagement] Firestore add failed, applying local state', e);
-          setResources(prev => {
-            const next = [...prev, newData];
-            try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
-            return next;
-          });
-        });
-      }
+    console.warn('[ResourceManagement] Firebase disabled or db missing. Saving locally.');
+    if (selectedResource) {
+      setResources(prev => {
+        const next = prev.map(r => r.id === selectedResource.id ? newData : r);
+        try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
+        return next;
+      });
     } else {
-      console.warn('[ResourceManagement] Firebase disabled or db missing. Saving locally.');
-      if (selectedResource) {
-        setResources(prev => {
-          const next = prev.map(r => r.id === selectedResource.id ? newData : r);
-          try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
-          return next;
-        });
-      } else {
-        setResources(prev => {
-          const next = [...prev, newData];
-          try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
-          return next;
-        });
-      }
+      setResources(prev => {
+        const next = [...prev, newData];
+        try { localStorage.setItem('xtr_resources', JSON.stringify(next)); } catch {}
+        return next;
+      });
     }
     console.log('[ResourceManagement] Saved resource:', newData);
     // Ensure filters don't hide the newly added resource
@@ -752,11 +648,9 @@ export function ResourceManagementScreen() {
         <div>
           <h1 className="text-2xl font-bold">Resource Management</h1>
           <p className="text-gray-600">Manage team members and resource allocation</p>
-          <div className="mt-1 text-xs">
-            <span className={firebaseEnabled ? "text-green-600" : "text-red-600"}>
-              {firebaseEnabled ? `Firebase: ON (${import.meta.env.VITE_FIREBASE_PROJECT_ID || '-'})` : 'Firebase: OFF'}
-            </span>
-        </div>
+          <div className="mt-1 text-xs text-orange-600">
+            Sync mode: Local storage (offline)
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" onClick={handleReportsClick}>

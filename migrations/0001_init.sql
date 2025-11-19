@@ -1,0 +1,3 @@
+.read ./db/schema.sql
+
+

@@ -1,6 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { db, firebaseEnabled } from "../../lib/firebase";
-import { addDoc, collection, setDoc, doc, onSnapshot } from "firebase/firestore";
 import { subscribeDoc, writeDocSafe } from "../../lib/persistence";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { KanbanCard } from "../KanbanCard";
@@ -293,9 +291,6 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSource, setSelectedSource] = useState("all");
   const [selectedProduct, setSelectedProduct] = useState("all-products");
-  const [salesVisitsFs, setSalesVisitsFs] = useState<any[]>([]);
-  const [onFieldFs, setOnFieldFs] = useState<any[]>([]);
-  const [pmProjectsFs, setPmProjectsFs] = useState<any[]>([]);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   
   const [commentText, setCommentText] = useState("");
@@ -330,46 +325,7 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
     }
   }, [userEmail]);
 
-  // Subscribe to sales site visits from Firestore for cross-device visibility
-  useEffect(() => {
-    let unsub: (() => void) | undefined;
-    if (firebaseEnabled && db) {
-      try {
-        unsub = onSnapshot(collection(db, 'site_visits'), (snap: any) => {
-          const arr = snap?.docs?.map((d: any) => d?.data && typeof d.data === 'function' ? d.data() : d?.data()) || [];
-          if (Array.isArray(arr)) setSalesVisitsFs(arr as any);
-        });
-      } catch {}
-    }
-    return () => { if (typeof unsub === 'function') unsub(); };
-  }, []);
-
-  useEffect(() => {
-    let unsub: (() => void) | undefined;
-    if (firebaseEnabled && db) {
-      try {
-        unsub = onSnapshot(collection(db, 'onfield_site_visits'), (snap: any) => {
-          const arr = snap?.docs?.map((d: any) => d?.data && typeof d.data === 'function' ? d.data() : d?.data()) || [];
-          if (Array.isArray(arr)) setOnFieldFs(arr as any);
-        });
-      } catch {}
-    }
-    return () => { if (typeof unsub === 'function') unsub(); };
-  }, []);
-
-  // PM projects cross-device snapshot for backfilling projectSnapshot on attach
-  useEffect(() => {
-    let unsub: (() => void) | undefined;
-    if (firebaseEnabled && db) {
-      try {
-        unsub = onSnapshot(collection(db, 'pm_projects'), (snap: any) => {
-          const arr = snap?.docs?.map((d: any) => d?.data && typeof d.data === 'function' ? d.data() : d?.data()) || [];
-          if (Array.isArray(arr)) setPmProjectsFs(arr as any);
-        });
-      } catch {}
-    }
-    return () => { if (typeof unsub === 'function') unsub(); };
-  }, []);
+  // Firestore integration removed; Leads CRM now relies on local persistence.
 
   useEffect(() => {
     if (selectedLead) {
@@ -395,18 +351,7 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
         if (match) { setSelectedLead({ ...(selectedLead as any), projectSnapshot: match } as any); return; }
       }
     } catch {}
-    if (Array.isArray(pmProjectsFs) && pmProjectsFs.length > 0) {
-      try {
-        const name = (selectedLead as any)?.title;
-        const addr = (selectedLead as any)?.company;
-        const email = (selectedLead as any)?.tags?.[0];
-        const matchFs = pmProjectsFs.find((p: any) => (
-          (name && p.customerName === name) || (email && p.customerEmail === email) || (addr && p.customerAddress === addr)
-        ));
-        if (matchFs) { setSelectedLead({ ...(selectedLead as any), projectSnapshot: matchFs } as any); }
-      } catch {}
-    }
-  }, [selectedLead, pmProjectsFs]);
+  }, [selectedLead]);
 
   // Listen for site visit save events to attach data and move status
   useEffect(() => {
@@ -461,17 +406,6 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
               ));
               if (matchLocal) { projectSnap = matchLocal; linked = { id: matchLocal.id, title: matchLocal.title }; }
             } catch {}
-            if (!projectSnap && Array.isArray(pmProjectsFs) && pmProjectsFs.length > 0) {
-              try {
-                const name = String(siteVisit.customerName || '').trim();
-                const addr = String(siteVisit.propertyAddress || '').trim();
-                const email = String(siteVisit.customerEmail || '').trim();
-                const matchFs = pmProjectsFs.find((p: any) => (
-                  (name && p.customerName === name) || (email && p.customerEmail === email) || (addr && p.customerAddress === addr)
-                ));
-                if (matchFs) { projectSnap = matchFs; linked = { id: matchFs.id, title: matchFs.title }; }
-              } catch {}
-            }
             const newLead = {
               id: `lead-${Date.now()}`,
               title: siteVisit.customerName || 'Untitled',
@@ -747,11 +681,6 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
       createdAt: new Date().toISOString(),
     };
     await writeDocSafe('projects', projectId, projectPayload);
-    try {
-      if (firebaseEnabled && db) {
-        await setDoc(doc(db, 'projects', projectId), projectPayload as any, { merge: true });
-      }
-    } catch {}
     // Link the newly created project to the selected lead and move status if changed
     const targetStatus = projectForm.status || selectedLead.status || 'new';
     const updatedLead = {
@@ -846,12 +775,6 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
     writeDocSafe('leads_state', 'columns', { columns: nextColumns });
     // Also persist locally for other screens to access
     try { localStorage.setItem('xtr_leads_state_columns', JSON.stringify({ columns: nextColumns })); } catch {}
-    // Firestore write for cross-device sync
-    try {
-      if (firebaseEnabled && db) {
-        setDoc(doc(db, 'leads_state', 'columns'), { columns: nextColumns } as any, { merge: true });
-      }
-    } catch {}
     // Dispatch event to notify other components (e.g., ProjectManagementScreen)
     try { window.dispatchEvent(new Event('xtr-leads-updated')); } catch {}
   };
@@ -860,40 +783,115 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
     const order = [
       'new','contacted','qualified','sales-site-visit','on-field-inspection','proposal','negotiation','closed-won','closed-lost'
     ];
+    // Filter function to ensure only leads are included (exclude projects from Project Management)
+    const filterProjects = (leads: any[]): any[] => {
+      if (!Array.isArray(leads)) return [];
+      return leads.filter((lead: any) => {
+        // Valid lead statuses (from Leads CRM)
+        const validLeadStatuses = [
+          'new', 'contacted', 'qualified', 'sales-site-visit', 
+          'on-field-inspection', 'proposal', 'negotiation', 
+          'closed-won', 'closed-lost'
+        ];
+        
+        // Project Management statuses (should be excluded)
+        const projectStatuses = [
+          'scheduled', 'to-be-rescheduled', 'installation-in-progress', 
+          'installation-completed', 'ces-certificate-applied', 'ces-certificate-received',
+          'retailer-new', 'site-inspection', 'stage-one', 'stage-two', 'full-system',
+          'retailer-scheduled', 'retailer-to-be-rescheduled', 'retailer-installation-in-progress',
+          'retailer-installation-completed', 'retailer-ces-certificate-applied',
+          'retailer-ces-certificate-received', 'retailer-ces-certificate-submitted', 'retailer-done',
+          'canceled', 'done', 'not-started', 'in-progress', 'inspection', 'completed'
+        ];
+        
+        // Check if status is a project status (exclude)
+        const leadStatus = (lead.status || '').toLowerCase().trim();
+        // If status is a project status and NOT a valid lead status, exclude it
+        if (projectStatuses.includes(leadStatus)) {
+          console.log('[LeadsCRM] Filtering out project (has project status):', lead.id || lead.name, 'status:', leadStatus);
+          return false;
+        }
+        
+        // Ensure status is a valid lead status (if status is provided)
+        if (leadStatus && !validLeadStatuses.includes(leadStatus)) {
+          // If it's not a valid lead status and not in project statuses, still allow it (might be legacy or custom)
+          // But log it for debugging
+          console.log('[LeadsCRM] Warning: Unknown status:', leadStatus, 'for lead:', lead.id || lead.name);
+        }
+        
+        // Check if it's missing required lead fields (title is essential for leads)
+        if (!lead.title && !lead.id) {
+          console.log('[LeadsCRM] Filtering out item (missing lead fields):', lead.id || lead.name);
+          return false;
+        }
+        
+        // If it has projectDetails with systemInfo but no lead structure, it's likely a project
+        // But allow leads that have projectSnapshot attached (leads can have project data)
+        if (lead.projectDetails && typeof lead.projectDetails === 'object' && lead.projectDetails.systemInfo) {
+          // Only exclude if it doesn't have lead structure (title, company/tags)
+          const hasLeadStructure = lead.title && (lead.company || (Array.isArray(lead.tags) && lead.tags.length > 0));
+          if (!hasLeadStructure) {
+            console.log('[LeadsCRM] Filtering out project (has projectDetails but no lead structure):', lead.id || lead.name);
+            return false;
+          }
+        }
+        
+        return true;
+      });
+    };
+    
     const migrate = (cols: any[]): any[] => {
       const byId: Record<string, any> = {};
-      (cols || []).forEach(c => { byId[c.id] = c; });
+      (cols || []).forEach(c => { 
+        // Filter out projects from each column's leads
+        const filteredLeads = filterProjects(c.leads || []);
+        byId[c.id] = { ...c, leads: filteredLeads, count: filteredLeads.length };
+      });
       if (byId['closed']) {
         byId['closed-won'] = { ...byId['closed'], id: 'closed-won', title: 'Closed Won' };
         delete byId['closed'];
       }
       return order.map(id => byId[id] ? { ...byId[id] } : { id, title: columns.find(c => c.id === id)?.title || id, count: 0, leads: [] });
     };
-    // Prefer Firestore realtime when available
-    let unsubFs: (() => void) | undefined;
-    if (firebaseEnabled && db) {
+    
+    // Load initial data from localStorage first (for immediate display)
+    const loadInitialData = () => {
       try {
-        unsubFs = onSnapshot(doc(db, 'leads_state', 'columns'), (snap: any) => {
-          const data = typeof snap?.data === 'function' ? snap.data() : undefined;
-      if (data && Array.isArray(data.columns)) {
-        const next = migrate(data.columns as any);
-        setColumns(next as any);
-            try { localStorage.setItem('xtr_leads_state_columns', JSON.stringify({ columns: next })); } catch {}
+        const raw = localStorage.getItem('xtr_leads_state_columns');
+        if (raw) {
+          const data = JSON.parse(raw);
+          if (data && Array.isArray(data.columns)) {
+            const next = migrate(data.columns as any);
+            setColumns(next as any);
           }
-        });
-      } catch {}
-    }
-    // Local fallback
-    const unsubLocal = subscribeDoc<{ columns: any[] }>('leads_state', 'columns', (data) => {
-      if (data && Array.isArray(data.columns)) {
-        const next = migrate(data.columns as any);
-        setColumns(next as any);
-        try { localStorage.setItem('xtr_leads_state_columns', JSON.stringify({ columns: next })); } catch {}
+        }
+      } catch (error) {
+        console.error('Error loading initial leads data:', error);
       }
-    });
+    };
+    
+    // Load initial data immediately
+    loadInitialData();
+    
+    // Listen for storage events (cross-tab sync)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'xtr_leads_state_columns' && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue);
+          if (data && Array.isArray(data.columns)) {
+            const next = migrate(data.columns as any);
+            setColumns(next as any);
+          }
+        } catch (error) {
+          console.error('Error handling storage change:', error);
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    
     return () => {
-      if (typeof unsubLocal === 'function') unsubLocal();
-      if (typeof unsubFs === 'function') unsubFs();
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 
@@ -994,12 +992,6 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
           };
           const next = [pmItem, ...existing];
           localStorage.setItem('xtr_projects', JSON.stringify(next));
-          // Also persist to Firestore when enabled for cross-device durability
-          try {
-            if (firebaseEnabled && db) {
-              addDoc(collection(db, 'pm_projects'), pmItem as any).catch(() => {});
-            }
-          } catch {}
           try { window.dispatchEvent(new Event('xtr-projects-updated')); } catch {}
         }
       } catch {}
@@ -1088,11 +1080,6 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
           };
           const next = [pmItem, ...(Array.isArray(existing) ? existing : [])];
           localStorage.setItem('xtr_projects', JSON.stringify(next));
-          try {
-            if (firebaseEnabled && db) {
-              addDoc(collection(db, 'pm_projects'), pmItem as any).catch(() => {});
-            }
-          } catch {}
           try { window.dispatchEvent(new Event('xtr-projects-updated')); } catch {}
         }
       } catch {}
@@ -1190,32 +1177,6 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
               }
             }
           } catch {}
-          
-          // Try Firestore if not found in localStorage
-          if ((!siteVisitData || !siteVisitData.electricianVisitDate) && Array.isArray(salesVisitsFs) && salesVisitsFs.length > 0) {
-            try {
-              const name = snap.customerName || updatedLead.title || '';
-              const email = snap.customerEmail || (updatedLead.tags && updatedLead.tags[0]) || '';
-              const addr = snap.customerAddress || updatedLead.company || '';
-              
-              const matchFs = salesVisitsFs.find((svItem: any) => {
-                const svName = (svItem.customerName || '').toLowerCase().trim();
-                const svEmail = (svItem.customerEmail || '').toLowerCase().trim();
-                const svAddr = (svItem.propertyAddress || '').toLowerCase().trim();
-                const n = name.toLowerCase().trim();
-                const e = email.toLowerCase().trim();
-                const a = addr.toLowerCase().trim();
-                
-                return (n && svName && n === svName) ||
-                       (e && svEmail && e === svEmail) ||
-                       (a && svAddr && a === svAddr);
-              });
-              
-              if (matchFs && matchFs.electricianVisitDate) {
-                siteVisitData = matchFs;
-              }
-            } catch {}
-          }
         }
 
         // If electrician visit is scheduled, create/update project for calendar visibility
@@ -1324,36 +1285,6 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
 
             // Save projects
             localStorage.setItem('xtr_projects', JSON.stringify(projects));
-            
-            // Sync to Firestore
-            if (firebaseEnabled && db) {
-              const projectToSave = existingProjectIndex >= 0 
-                ? projects[existingProjectIndex]
-                : projects[0];
-              
-              try {
-                if (existingProjectIndex >= 0) {
-                  // Update existing project in Firestore
-                  const existingProject = projects[existingProjectIndex];
-                  const pmProjectsRaw = localStorage.getItem('xtr_pm_projects_ids');
-                  // Try to find Firestore ID
-                  if (pmProjectsRaw) {
-                    const pmProjectsIds = JSON.parse(pmProjectsRaw);
-                    const fsId = pmProjectsIds[existingProject.id];
-                    if (fsId) {
-                      setDoc(doc(db, 'pm_projects', fsId), projectToSave as any, { merge: true }).catch(() => {});
-                    } else {
-                      addDoc(collection(db, 'pm_projects'), projectToSave as any).catch(() => {});
-                    }
-                  } else {
-                    addDoc(collection(db, 'pm_projects'), projectToSave as any).catch(() => {});
-                  }
-                } else {
-                  // Add new project to Firestore
-                  addDoc(collection(db, 'pm_projects'), projectToSave as any).catch(() => {});
-                }
-              } catch {}
-            }
 
             // Notify other components of project update
             try { window.dispatchEvent(new Event('xtr-projects-updated')); } catch {}
@@ -1618,16 +1549,6 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
                           ));
                           if (matchLocal) status = 'completed';
                         } catch {}
-                        if (!status && Array.isArray(onFieldFs) && onFieldFs.length > 0) {
-                          try {
-                            const name = leadAny?.projectSnapshot?.customerName || leadAny?.title;
-                            const addr = leadAny?.projectSnapshot?.customerAddress || leadAny?.company;
-                            const matchFs = onFieldFs.some((v: any) => (
-                              (!name || v.customerName === name) && (!addr || v.propertyAddress === addr)
-                            ));
-                            if (matchFs) status = 'completed';
-                          } catch {}
-                        }
                       }
                       return status || '-';
                     })()
@@ -1858,19 +1779,6 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
                           }
                         }
                       } catch {}
-                      if (!onField && Array.isArray(onFieldFs) && onFieldFs.length > 0) {
-                        try {
-                          const name = leadAny?.projectSnapshot?.customerName || leadAny?.title;
-                          const addr = leadAny?.projectSnapshot?.customerAddress || leadAny?.company;
-                          const matchesFs = onFieldFs.filter((v: any) => (
-                            (!name || v.customerName === name) && (!addr || v.propertyAddress === addr)
-                          ));
-                          if (matchesFs.length > 0) {
-                            matchesFs.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                            onField = matchesFs[0];
-                          }
-                        } catch {}
-                      }
                     }
                     return onField ? (
                       <div className="p-3 border rounded-lg mt-3">
@@ -2003,21 +1911,6 @@ export function LeadsCRMScreen({ userEmail }: LeadsCRMScreenProps) {
                       }
                     }
                   } catch {}
-                  
-                  // Firestore fallback for teammates/devices without local storage
-                  if (!siteVisitData && Array.isArray(salesVisitsFs) && salesVisitsFs.length > 0) {
-                    try {
-                      const name = leadAny?.projectSnapshot?.customerName || leadAny?.title;
-                      const addr = leadAny?.projectSnapshot?.customerAddress || leadAny?.company;
-                      const matchesFs = salesVisitsFs.filter((v: any) => (
-                        (!name || v.customerName === name) && (!addr || v.propertyAddress === addr)
-                      ));
-                      if (matchesFs.length > 0) {
-                        matchesFs.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                        siteVisitData = matchesFs[0];
-                      }
-                    } catch {}
-                  }
                   
                   // Only show if site visit was actually submitted (has id and createdAt)
                   const isSubmitted = siteVisitData && siteVisitData.id && siteVisitData.createdAt;

@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { writeDocSafe } from "../../lib/persistence";
-import { db, firebaseEnabled } from "../../lib/firebase";
-import { addDoc, collection, onSnapshot } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -269,31 +267,7 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
     loadLocal();
     const onStorage = (e: StorageEvent) => { if (e.key === 'xtr_site_visits') loadLocal(); };
     window.addEventListener('storage', onStorage);
-    let unsub: (() => void) | undefined;
-    if (firebaseEnabled && db) {
-      try {
-        unsub = onSnapshot(collection(db, 'site_visits'), (snap) => {
-          const arr = snap.docs.map((d) => d.data());
-          if (Array.isArray(arr)) setVisits(arr as any);
-        });
-      } catch {}
-    }
-    return () => { window.removeEventListener('storage', onStorage); if (typeof unsub === 'function') unsub(); };
-  }, []);
-
-  // Load submitted site visits for table view
-  useEffect(() => {
-    const loadVisits = () => {
-      try {
-        const raw = localStorage.getItem('xtr_site_visits');
-        const arr = raw ? JSON.parse(raw) : [];
-        if (Array.isArray(arr)) setVisits(arr);
-      } catch { setVisits([]); }
-    };
-    loadVisits();
-    const onStorage = (e: StorageEvent) => { if (e.key === 'xtr_site_visits') loadVisits(); };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    return () => { window.removeEventListener('storage', onStorage); };
   }, []);
 
   // Prefill sales person name from logged-in user email
@@ -391,9 +365,6 @@ export function SiteVisitScreen({ userEmail }: SiteVisitScreenProps) {
       const next = Array.isArray(prev) ? [siteVisit, ...prev] : [siteVisit];
       localStorage.setItem('xtr_site_visits', JSON.stringify(next));
       setVisits(next);
-      if (firebaseEnabled && db) {
-        addDoc(collection(db, 'site_visits'), siteVisit).catch(() => {});
-      }
     } catch {}
 
     // Update Leads board: attach site visit and move to sales-site-visit

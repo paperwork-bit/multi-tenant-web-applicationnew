@@ -1,60 +1,43 @@
-# Quick Deploy Instructions
+# Quick Deploy (Cloudflare)
 
-## First Time Setup (One-time)
-
-If you get authentication errors, run:
-
-```bash
-firebase login
-```
-
-This will open a browser for OAuth authentication. Follow the prompts.
-
-## Deploy to Live Site
-
-### Method 1: Use the Script (Easiest)
-```bash
-./deploy.sh
-```
-
-### Method 2: Manual
-```bash
-# 1. Unset token (if needed)
-unset FIREBASE_TOKEN
-
-# 2. Build
-npm run build
-
-# 3. Deploy
-firebase deploy --only hosting
-```
-
-## Verify Authentication
-
-```bash
-firebase login:list
-```
-
-Should show: `Logged in as paperwork@xtechsrenewables.com.au`
-
-## If Token Error Persists
-
-1. **Check current session:**
+1. **Install** (if you haven’t already)
    ```bash
-   echo $FIREBASE_TOKEN
-   ```
-   If it shows a value, run: `unset FIREBASE_TOKEN`
-
-2. **Open a new terminal window** (this loads the updated .zshrc)
-
-3. **Re-authenticate:**
-   ```bash
-   firebase logout
-   firebase login
+   npm install
+   npx wrangler login
    ```
 
-4. **Try deployment again:**
+2. **Run migrations** (only when schema changes)
    ```bash
-   ./deploy.sh
+   npm run cf:migrate
    ```
+
+3. **Ship**
+   ```bash
+   npm run cf:deploy
+   ```
+
+That’s it—Pages handles both the SPA (dist) and functions (under
+`functions/`). The last command prints a preview + production URL.
+
+---
+
+## Helpful Extras
+
+- **Local full-stack dev**
+  ```bash
+  npm run cf:dev
+  ```
+  Uses Wrangler to serve Vite + Workers + D1 in one process.
+
+- **Data import**
+  ```bash
+  npm run migrate:local -- --input ./data/local-storage.json --api http://127.0.0.1:8787/api
+  ```
+
+- **Secrets**
+  ```bash
+  npx wrangler secret put XERO_CLIENT_ID
+  ```
+
+No Firebase CLI, tokens, or deploy scripts are required anymore.
 
