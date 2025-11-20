@@ -9,9 +9,9 @@ VITE_API_BASE = "/api"
 
 [[d1_databases]]
 binding = "D1_DB"
-database_name = "multi-tenant-web-app"
-database_id = "00000000-0000-0000-0000-000000000000"
-preview_database_id = "11111111-1111-1111-1111-111111111111"
+database_name = "multi-tenant-web-applicationnew"
+database_id = "228b87ff-95da-41c1-81b8-0658f0e967ac"
+preview_database_id = "228b87ff-95da-41c1-81b8-0658f0e967ac"
 migrations_dir = "migrations"
 
 
