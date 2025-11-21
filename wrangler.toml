@@ -14,4 +14,14 @@ database_id = "228b87ff-95da-41c1-81b8-0658f0e967ac"
 preview_database_id = "228b87ff-95da-41c1-81b8-0658f0e967ac"
 migrations_dir = "migrations"
 
+[env.staging]
+vars = { VITE_API_BASE = "/api" }
+
+[[env.staging.d1_databases]]
+binding = "D1_DB"
+database_name = "multi-tenant-web-applicationnew-staging"
+database_id = "747a84dd-c76f-423e-b743-7644e6078a65"
+preview_database_id = "747a84dd-c76f-423e-b743-7644e6078a65"
+migrations_dir = "migrations"
+
 
